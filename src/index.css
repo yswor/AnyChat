@@ -503,19 +503,38 @@
   flex-shrink: 0;
 }
 
+.chat-page__scroll-fab-wrap {
+  position: sticky;
+  bottom: 8px;
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 12px 8px 0;
+  pointer-events: none;
+}
+
 .chat-page__scroll-fab {
-  position: absolute;
-  bottom: 16px;
-  right: 16px;
-  z-index: 10;
-  width: 40px;
-  height: 40px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
+  pointer-events: auto;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: transform 0.15s, opacity 0.2s;
   animation: fadeInScrollFab 0.2s ease;
 }
 
+.chat-page__scroll-fab:active {
+  transform: scale(0.95);
+}
+
 @keyframes fadeInScrollFab {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
