@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useChatStore } from "../stores/chatStore";
 import { useProviderStore } from "../stores/providerStore";
@@ -8,16 +8,30 @@ export function HomePage() {
   const navigate = useNavigate();
   const { conversations, loadConversations, loading, createConversation } = useChatStore();
   const { providers, activeProviderId } = useProviderStore();
+  const [creating, setCreating] = useState(false);
+  const autoCreated = useRef(false);
 
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
 
   useEffect(() => {
-    if (!loading && conversations.length > 0) {
-      navigate(`/chat/${conversations[0].id}`, { replace: true });
-    }
-  }, [loading, conversations, navigate]);
+    if (loading || creating || autoCreated.current || providers.length === 0) return;
+    const activeProvider = providers.find((p) => p.id === activeProviderId) || providers[0];
+    if (!activeProvider) return;
+    const defaultModel = activeProvider.default_model || activeProvider.models?.[0];
+    if (!defaultModel) return;
+    autoCreated.current = true;
+    setCreating(true);
+    createConversation(activeProvider.id, defaultModel, DEFAULT_CONVERSATION_PARAMS)
+      .then((id) => {
+        navigate(`/chat/${id}`, { replace: true });
+      })
+      .catch(() => {
+        autoCreated.current = false;
+        setCreating(false);
+      });
+  }, [loading, creating, providers, activeProviderId, navigate, createConversation]);
 
   const handleNewChat = async () => {
     try {
@@ -39,7 +53,7 @@ export function HomePage() {
     }
   };
 
-  if (loading) {
+  if (loading || creating) {
     return (
       <div className="home-empty">
         <p>加载中...</p>

@@ -104,6 +104,33 @@ function reconstructContent(displayContent: string, attachmentData: string): str
     : `${header}\n\n${attachmentData}`;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeMessage(row: any): Message {
+  let usageDetails: Message["usage_details"];
+  if (row.usage_details) {
+    try {
+      usageDetails = typeof row.usage_details === "string"
+        ? JSON.parse(row.usage_details)
+        : row.usage_details;
+    } catch {
+      usageDetails = undefined;
+    }
+  }
+  return {
+    id: row.id,
+    conversation_id: row.conversation_id,
+    role: row.role,
+    content: row.content,
+    reasoning_content: row.reasoning_content || undefined,
+    attachment_type: row.attachment_type || undefined,
+    attachment_data: row.attachment_data || undefined,
+    tokens: row.tokens != null ? Number(row.tokens) : undefined,
+    usage_details: usageDetails,
+    provider_id: row.provider_id || undefined,
+    created_at: row.created_at,
+  };
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   currentConversationId: null,
@@ -139,7 +166,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       "SELECT * FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC",
       [conversationId],
     );
-    set({ messages: rows });
+    set({ messages: rows.map(normalizeMessage) });
   },
 
   createConversation: async (providerId, model, params) => {

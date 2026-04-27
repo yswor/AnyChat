@@ -658,6 +658,7 @@
 }
 
 .chat-bubble--user {
+  justify-content: flex-end;
 }
 
 .chat-bubble__body {
