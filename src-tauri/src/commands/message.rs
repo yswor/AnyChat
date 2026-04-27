@@ -45,6 +45,12 @@ pub struct StreamChunk {
     pub reasoning_content: Option<String>,
     pub done: bool,
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage_prompt: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage_completion: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage_cached: Option<i64>,
 }
 
 pub async fn stream_chat_request(
@@ -150,6 +156,9 @@ pub async fn stream_chat_request(
                 reasoning_content: None,
                 done: true,
                 error: Some(err_msg.clone()),
+                usage_prompt: None,
+                usage_completion: None,
+                usage_cached: None,
             },
         );
         return Err(AppError::Http(err_msg));
@@ -158,6 +167,7 @@ pub async fn stream_chat_request(
     let mut stream = response.bytes_stream();
     let mut full_content = String::new();
     let mut line_buf = String::new();
+    let mut last_usage: Option<(i64, i64, i64)> = None;
 
     loop {
         let chunk =
@@ -188,6 +198,7 @@ pub async fn stream_chat_request(
                 continue;
             }
             if line == "data: [DONE]" {
+                let (up, uc, uca) = last_usage.unwrap_or((0, 0, 0));
                 let _ = app.emit(
                     &format!("chat-stream:{}", conversation_id),
                     StreamChunk {
@@ -195,6 +206,9 @@ pub async fn stream_chat_request(
                         reasoning_content: None,
                         done: true,
                         error: None,
+                        usage_prompt: (up > 0).then_some(up),
+                        usage_completion: (uc > 0).then_some(uc),
+                        usage_cached: (uca > 0).then_some(uca),
                     },
                 );
                 return Ok(full_content);
@@ -202,6 +216,15 @@ pub async fn stream_chat_request(
             if let Some(data) = line.strip_prefix("data: ") {
                 match serde_json::from_str::<serde_json::Value>(data) {
                     Ok(json) => {
+                        // Capture usage from the final chunk
+                        if let Some(usage) = json.get("usage") {
+                            last_usage = Some((
+                                usage["prompt_tokens"].as_i64().unwrap_or(0),
+                                usage["completion_tokens"].as_i64().unwrap_or(0),
+                                usage["prompt_tokens_details"]["cached_tokens"].as_i64().unwrap_or(0),
+                            ));
+                        }
+
                         let delta = &json["choices"][0]["delta"];
                         let content = delta["content"].as_str().map(|s| s.to_string());
                         let reasoning = delta["reasoning_content"].as_str().map(|s| s.to_string());
@@ -217,6 +240,9 @@ pub async fn stream_chat_request(
                                     reasoning_content: reasoning,
                                     done: false,
                                     error: None,
+                                    usage_prompt: None,
+                                    usage_completion: None,
+                                    usage_cached: None,
                                 },
                             );
                         }
@@ -236,6 +262,9 @@ pub async fn stream_chat_request(
             reasoning_content: None,
             done: true,
             error: None,
+            usage_prompt: None,
+            usage_completion: None,
+            usage_cached: None,
         },
     );
     Ok(full_content)

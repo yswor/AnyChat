@@ -47,6 +47,12 @@ export interface Message {
   attachment_type?: string;
   attachment_data?: string;
   tokens?: number;
+  usage_details?: {
+    prompt: number;
+    completion: number;
+    cached: number;
+  };
+  provider_id?: string;
   created_at: string;
 }
 
@@ -61,6 +67,9 @@ export interface StreamChunk {
   reasoning_content: string | null;
   done: boolean;
   error: string | null;
+  usage_prompt?: number;
+  usage_completion?: number;
+  usage_cached?: number;
 }
 
 export interface BalanceInfo {

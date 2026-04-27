@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.0.1] - 2026-04-28
+
+### Fixed
+- 修复旧版 DB 未执行 migration 003 导致消息发送失败（INSERT 缺列 addColumn 兜底）
+- 修复消息卡片头像去除后 max-width 未更新导致卡片未撑满屏幕
+- 修复 FAB 按钮缺少 position: relative 父容器导致定位偏移
+
+### Changed
+- 消息卡片去除头像图标，宽度撑满屏幕
+- Token 用量信息移至操作按钮同行，去除 emoji
+- 文件上传限制提升至 2MB
+- 删除 OpenAI / OpenRouter 供应商模板
+
 ## [1.0.0] - 2026-04-27
 
 ### Added

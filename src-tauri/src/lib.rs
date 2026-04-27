@@ -22,6 +22,12 @@ pub fn run() {
             sql: include_str!("../migrations/002_add_penalty_fields.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 3,
+            description: "add usage_details and provider_id to messages",
+            sql: include_str!("../migrations/003_add_usage_provider.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

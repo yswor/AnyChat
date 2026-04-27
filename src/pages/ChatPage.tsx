@@ -24,8 +24,11 @@ export function ChatPage() {
   const [attachedFile, setAttachedFile] = useState<AttachedFile | null>(null);
   const [isStreamingLocal, setIsStreamingLocal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const [showScrollFab, setShowScrollFab] = useState(false);
 
   const {
     conversations,
@@ -36,6 +39,7 @@ export function ChatPage() {
     updateConversation,
     setCurrentConversation,
     streamChat,
+    deleteMessage,
   } = useChatStore();
 
   const { providers } = useProviderStore();
@@ -61,8 +65,24 @@ export function ChatPage() {
   }, [id]);
 
   useEffect(() => {
+    if (isAtBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages, streamState.content, isAtBottom]);
+
+  const handleMessagesScroll = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+    setIsAtBottom(atBottom);
+    setShowScrollFab(!atBottom);
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamState.content]);
+    setIsAtBottom(true);
+    setShowScrollFab(false);
+  }, []);
 
   useEffect(() => {
     const handleSharedText = (e: Event) => {
@@ -94,7 +114,7 @@ export function ChatPage() {
     setInput("");
     setAttachedFile(null);
     setIsStreamingLocal(true);
-    await streamChat(fullContent, false, displayContent);
+    await streamChat(fullContent, false, displayContent, attachedFile ? { type: "file", data: attachedFile.content } : undefined);
     setIsStreamingLocal(false);
     loadConversations();
   }, [input, attachedFile, streamState.isStreaming, streamChat, loadConversations]);
@@ -188,6 +208,12 @@ export function ChatPage() {
     setReaderMessage(null);
   }, []);
 
+  const handleDelete = useCallback(async (msgIndex: number) => {
+    const msg = messages[msgIndex];
+    if (!msg) return;
+    await deleteMessage(msg.id);
+  }, [messages, deleteMessage]);
+
   const handleRegenerate = async (msgIndex: number) => {
     if (!id || streamState.isStreaming) return;
     // Find the preceding user message
@@ -226,7 +252,7 @@ export function ChatPage() {
 
   return (
     <div className="chat-page">
-      <div className="chat-page__messages">
+      <div className="chat-page__messages" ref={messagesContainerRef} onScroll={handleMessagesScroll}>
         {messages.length === 0 && (
           <div className="chat-page__empty">
             <p>开始新对话</p>
@@ -252,6 +278,7 @@ export function ChatPage() {
               }
               isReaderMode={readerMode}
               onOpenReader={handleOpenReader}
+              onDelete={handleDelete}
             />
           ))}
         {streamState.error && (
@@ -347,6 +374,19 @@ export function ChatPage() {
           </button>
         </div>
       </div>
+
+      {showScrollFab && (
+        <button
+          className="btn-fab chat-page__scroll-fab"
+          onClick={scrollToBottom}
+          title="滚动到底部"
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <polyline points="19 12 12 19 5 12" />
+          </svg>
+        </button>
+      )}
 
       {conv && (
         <SettingsModal

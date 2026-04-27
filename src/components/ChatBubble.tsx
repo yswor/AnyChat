@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
-import { IconUser, IconBot } from "./Icons";
 import type { Message } from "../types";
 
 interface ChatBubbleProps {
@@ -11,6 +10,7 @@ interface ChatBubbleProps {
   messageIndex: number;
   isLastBubble: boolean;
   onRegenerate: (messageIndex: number) => void;
+  onDelete?: (messageIndex: number) => void;
   isReaderMode?: boolean;
   onOpenReader?: (message: Message) => void;
 }
@@ -23,6 +23,7 @@ export function ChatBubble({
   messageIndex,
   isLastBubble,
   onRegenerate,
+  onDelete,
   isReaderMode = false,
   onOpenReader,
 }: ChatBubbleProps) {
@@ -49,9 +50,6 @@ export function ChatBubble({
 
   return (
     <div className={`chat-bubble ${isUser ? "chat-bubble--user" : "chat-bubble--assistant"}`}>
-      <div className="chat-bubble__avatar">
-        {isUser ? <IconUser size={16} /> : <IconBot size={16} />}
-      </div>
       <div className="chat-bubble__body">
         {showReasoning && (
           <div className="chat-bubble__reasoning">
@@ -142,6 +140,24 @@ export function ChatBubble({
                 </svg>
               )}
             </button>
+            {onDelete && (
+              <button
+                className="btn-icon btn-icon--sm btn-icon--danger"
+                onClick={() => onDelete(messageIndex)}
+                title="删除消息"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+              </button>
+            )}
+            {message.usage_details && (
+              <span className="chat-bubble__token-text">
+                输入 {message.usage_details.prompt.toLocaleString()} · 输出 {message.usage_details.completion.toLocaleString()}
+                {message.usage_details.cached > 0 && <> · 缓存命中 {message.usage_details.cached.toLocaleString()}</>}
+              </span>
+            )}
           </div>
         )}
         {isStreaming && !content && !reasoning && !isReaderMsg && (

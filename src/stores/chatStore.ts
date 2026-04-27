@@ -47,10 +47,12 @@ interface ChatState {
   setCurrentConversation: (id: string | null) => void;
   addMessage: (message: Message) => void;
   updateMessage: (id: string, data: Partial<Message>) => void;
+  deleteMessage: (messageId: string) => Promise<void>;
 
-  streamChat: (content: string, skipUserMessage?: boolean, displayContent?: string) => Promise<string>;
+  streamChat: (content: string, skipUserMessage?: boolean, displayContent?: string, attachment?: { type: string; data: string }) => Promise<string>;
   cancelStream: () => void;
   resetStream: () => void;
+  getProviderTokens: (providerId: string) => Promise<number>;
 }
 
 let db: Database | null = null;
@@ -89,6 +91,17 @@ function normalizeConversation(row: any): Conversation {
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
+}
+
+function reconstructContent(displayContent: string, attachmentData: string): string {
+  // displayContent: "[文件: name (size)]\n\nuser text" or just "[文件: name (size)]"
+  // attachmentData: the raw file text
+  const nlIdx = displayContent.indexOf("\n\n");
+  const header = nlIdx >= 0 ? displayContent.slice(0, nlIdx) : displayContent;
+  const body = nlIdx >= 0 ? displayContent.slice(nlIdx + 2) : "";
+  return body
+    ? `${header}\n\n${attachmentData}\n\n---\n${body}`
+    : `${header}\n\n${attachmentData}`;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -307,7 +320,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: s.messages.map((m) => (m.id === id ? { ...m, ...data } : m)),
     })),
 
-  streamChat: async (content: string, skipUserMessage?: boolean, displayContent?: string) => {
+  deleteMessage: async (messageId) => {
+    const d = await getDb();
+    await d.execute("DELETE FROM messages WHERE id = $1", [messageId]);
+    set((s) => ({ messages: s.messages.filter((m) => m.id !== messageId) }));
+  },
+
+  streamChat: async (content: string, skipUserMessage?: boolean, displayContent?: string, attachment?: { type: string; data: string }) => {
     const { currentConversationId, messages } = get();
     if (!currentConversationId) return "";
 
@@ -355,14 +374,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
         conversation_id: currentConversationId,
         role: "user",
         content: displayUserContent,
+        attachment_type: attachment?.type,
+        attachment_data: attachment?.data,
+        provider_id: conv.provider_id,
         created_at: now,
       };
 
-      await d.execute(
-        `INSERT INTO messages (id, conversation_id, role, content, created_at)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [userMsgId, currentConversationId, "user", displayUserContent, now],
-      );
+      try {
+        await d.execute(
+          `INSERT INTO messages (id, conversation_id, role, content, attachment_type, attachment_data, provider_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [userMsgId, currentConversationId, "user", displayUserContent, attachment?.type ?? null, attachment?.data ?? null, conv.provider_id, now],
+        );
+      } catch {
+        try { await d.execute("ALTER TABLE messages ADD COLUMN provider_id TEXT"); } catch { /* ok */ }
+        try { await d.execute("ALTER TABLE messages ADD COLUMN usage_details TEXT"); } catch { /* ok */ }
+        await d.execute(
+          `INSERT INTO messages (id, conversation_id, role, content, attachment_type, attachment_data, provider_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [userMsgId, currentConversationId, "user", displayUserContent, attachment?.type ?? null, attachment?.data ?? null, conv.provider_id, now],
+        );
+      }
 
       await d.execute(
         "UPDATE conversations SET updated_at = $1, title = COALESCE(NULLIF(title, ''), $2) WHERE id = $3",
@@ -383,7 +415,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     for (const msg of newMessages) {
       const m: { role: string; content: string; reasoning_content?: string } = {
         role: msg.role,
-        content: (displayContent != null && msg.id === displayUserMsgId) ? content : msg.content,
+        content: (displayContent != null && msg.id === displayUserMsgId)
+          ? content
+          : (msg.attachment_data ? reconstructContent(msg.content, msg.attachment_data) : msg.content),
       };
       if (msg.reasoning_content) {
         m.reasoning_content = msg.reasoning_content;
@@ -397,16 +431,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
       conversation_id: currentConversationId,
       role: "assistant",
       content: "",
+      provider_id: conv.provider_id,
       created_at: now,
     };
     get().addMessage(assistantMsg);
 
     // Save empty assistant message placeholder to DB
-    await d.execute(
-      `INSERT INTO messages (id, conversation_id, role, content, created_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [assistantMsgId, currentConversationId, "assistant", "", now],
-    );
+    try {
+      await d.execute(
+        `INSERT INTO messages (id, conversation_id, role, content, provider_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [assistantMsgId, currentConversationId, "assistant", "", conv.provider_id, now],
+      );
+    } catch {
+      try { await d.execute("ALTER TABLE messages ADD COLUMN provider_id TEXT"); } catch { /* ok */ }
+      await d.execute(
+        `INSERT INTO messages (id, conversation_id, role, content, provider_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [assistantMsgId, currentConversationId, "assistant", "", conv.provider_id, now],
+      );
+    }
 
     // Clean up any previously active stream before starting a new one
     resetActiveStream();
@@ -415,6 +459,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const eventName = `chat-stream:${currentConversationId}`;
       const { listen } = await import("@tauri-apps/api/event");
 
+      const usageRef: { current: { prompt: number; completion: number; cached: number } | null } = { current: null };
+
       const unlisten = await listen<StreamChunk>(eventName, (event) => {
         if (get().currentConversationId !== currentConversationId) {
           unlisten();
@@ -422,6 +468,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         const chunk = event.payload;
         if (chunk.done && !chunk.error) {
+          if (chunk.usage_prompt || chunk.usage_completion || chunk.usage_cached) {
+            usageRef.current = {
+              prompt: chunk.usage_prompt ?? 0,
+              completion: chunk.usage_completion ?? 0,
+              cached: chunk.usage_cached ?? 0,
+            };
+          }
           set((s) => ({
             streamState: { ...s.streamState, isStreaming: false },
           }));
@@ -480,10 +533,34 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const finalReasoning = get().streamState.reasoning;
 
-      await d.execute(
-        `UPDATE messages SET content = $1, reasoning_content = $2 WHERE id = $3`,
-        [finalContent, finalReasoning || null, assistantMsgId],
-      );
+      const streamUsage = usageRef.current;
+      const totalTokens = streamUsage ? (streamUsage.prompt + streamUsage.completion) : undefined;
+      const usageDetails = streamUsage ?? undefined;
+
+      try {
+        await d.execute(
+          `UPDATE messages SET content = $1, reasoning_content = $2, tokens = $3, usage_details = $4 WHERE id = $5`,
+          [
+            finalContent,
+            finalReasoning || null,
+            totalTokens ?? null,
+            usageDetails ? JSON.stringify(usageDetails) : null,
+            assistantMsgId,
+          ],
+        );
+      } catch {
+        try { await d.execute("ALTER TABLE messages ADD COLUMN usage_details TEXT"); } catch { /* ok */ }
+        await d.execute(
+          `UPDATE messages SET content = $1, reasoning_content = $2, tokens = $3, usage_details = $4 WHERE id = $5`,
+          [
+            finalContent,
+            finalReasoning || null,
+            totalTokens ?? null,
+            usageDetails ? JSON.stringify(usageDetails) : null,
+            assistantMsgId,
+          ],
+        );
+      }
 
       unlisten();
       activeUnlisten = null;
@@ -492,7 +569,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         streamState: { content: "", reasoning: "", isStreaming: false, error: null },
         messages: s.messages.map((m) =>
           m.id === assistantMsgId
-            ? { ...m, content: finalContent, reasoning_content: finalReasoning || undefined }
+            ? { ...m, content: finalContent, reasoning_content: finalReasoning || undefined, tokens: totalTokens, usage_details: usageDetails }
             : m,
         ),
       }));
@@ -520,5 +597,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       streamState: { content: "", reasoning: "", isStreaming: false, error: null },
     });
+  },
+
+  getProviderTokens: async (providerId: string) => {
+    const d = await getDb();
+    try {
+      const rows: { total: number }[] = await d.select(
+        "SELECT COALESCE(SUM(tokens), 0) AS total FROM messages WHERE provider_id = $1",
+        [providerId],
+      );
+      return rows[0]?.total ?? 0;
+    } catch {
+      return 0;
+    }
   },
 }));

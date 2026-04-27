@@ -1,12 +1,15 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useProviderStore } from "../stores/providerStore";
+import { useChatStore } from "../stores/chatStore";
 import { IconClose } from "../components/Icons";
 
 export function SettingsPage() {
   const navigate = useNavigate();
   const { providers, loading, loadProviders, removeProvider, activeProviderId, balances, fetchBalance } =
     useProviderStore();
+  const { getProviderTokens } = useChatStore();
+  const [providerTokenCounts, setProviderTokenCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     loadProviders();
@@ -20,6 +23,18 @@ export function SettingsPage() {
       }
     }
   }, [providers, loading, fetchBalance]);
+
+  useEffect(() => {
+    if (loading) return;
+    const loadTokens = async () => {
+      const counts: Record<string, number> = {};
+      for (const p of providers) {
+        counts[p.id] = await getProviderTokens(p.id);
+      }
+      setProviderTokenCounts(counts);
+    };
+    loadTokens();
+  }, [providers, loading, getProviderTokens]);
 
   return (
     <div className="settings-page">
@@ -89,6 +104,12 @@ export function SettingsPage() {
                     </div>
                     );
                   })()}
+                  {providerTokenCounts[p.id] > 0 && (
+                    <div className="provider-list-item__tokens">
+                      📊 本地累计: {providerTokenCounts[p.id].toLocaleString()} tokens
+                      <span className="provider-list-item__tokens-hint">（本 app 计算，非平台数据）</span>
+                    </div>
+                  )}
                 </div>
                 <button
                   className="btn-icon btn-icon--danger"
