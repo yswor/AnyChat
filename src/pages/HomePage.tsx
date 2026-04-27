@@ -2,11 +2,12 @@ import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useChatStore } from "../stores/chatStore";
 import { useProviderStore } from "../stores/providerStore";
+import Database from "@tauri-apps/plugin-sql";
 import { DEFAULT_CONVERSATION_PARAMS } from "../constants/defaults";
 
 export function HomePage() {
   const navigate = useNavigate();
-  const { conversations, loadConversations, loading, createConversation } = useChatStore();
+  const { loadConversations, loading, createConversation } = useChatStore();
   const { providers, activeProviderId } = useProviderStore();
   const [creating, setCreating] = useState(false);
   const autoCreated = useRef(false);
@@ -22,15 +23,31 @@ export function HomePage() {
     const defaultModel = activeProvider.default_model || activeProvider.models?.[0];
     if (!defaultModel) return;
     autoCreated.current = true;
-    setCreating(true);
-    createConversation(activeProvider.id, defaultModel, DEFAULT_CONVERSATION_PARAMS)
-      .then((id) => {
-        navigate(`/chat/${id}`, { replace: true });
-      })
-      .catch(() => {
-        autoCreated.current = false;
-        setCreating(false);
-      });
+
+    const init = async () => {
+      // Reuse an existing empty conversation if one exists
+      const db = await Database.load("sqlite:anychat.db");
+      try {
+        const rows: { id: string }[] = await db.select(
+          "SELECT id FROM conversations WHERE id NOT IN (SELECT DISTINCT conversation_id FROM messages) ORDER BY updated_at DESC LIMIT 1",
+        );
+        if (rows.length > 0) {
+          navigate(`/chat/${rows[0].id}`, { replace: true });
+          return;
+        }
+      } catch { /* fall through to create new */ }
+
+      setCreating(true);
+      createConversation(activeProvider.id, defaultModel, DEFAULT_CONVERSATION_PARAMS)
+        .then((id) => {
+          navigate(`/chat/${id}`, { replace: true });
+        })
+        .catch(() => {
+          autoCreated.current = false;
+          setCreating(false);
+        });
+    };
+    init();
   }, [loading, creating, providers, activeProviderId, navigate, createConversation]);
 
   const handleNewChat = async () => {
@@ -45,6 +62,19 @@ export function HomePage() {
         navigate("/settings");
         return;
       }
+
+      // Reuse existing empty conversation if one exists
+      const db = await Database.load("sqlite:anychat.db");
+      try {
+        const rows: { id: string }[] = await db.select(
+          "SELECT id FROM conversations WHERE id NOT IN (SELECT DISTINCT conversation_id FROM messages) ORDER BY updated_at DESC LIMIT 1",
+        );
+        if (rows.length > 0) {
+          navigate(`/chat/${rows[0].id}`);
+          return;
+        }
+      } catch { /* fall through to create new */ }
+
       const id = await createConversation(activeProvider.id, defaultModel, DEFAULT_CONVERSATION_PARAMS);
       navigate(`/chat/${id}`);
     } catch (err) {
@@ -59,10 +89,6 @@ export function HomePage() {
         <p>加载中...</p>
       </div>
     );
-  }
-
-  if (conversations.length > 0) {
-    return null;
   }
 
   return (
