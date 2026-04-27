@@ -7,13 +7,15 @@ use tauri::Emitter;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ChatMessage {
     pub role: String,
-    pub content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<serde_json::Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
 
@@ -370,7 +372,7 @@ pub async fn stream_chat_request(
         }
 
         // Append assistant message with tool_calls
-        let assistant_content = if !result.content.is_empty() { result.content.clone() } else { String::new() };
+        let assistant_content: Option<String> = if result.content.is_empty() { None } else { Some(result.content.clone()) };
         messages.push(ChatMessage {
             role: "assistant".to_string(),
             content: assistant_content,
@@ -420,7 +422,7 @@ pub async fn stream_chat_request(
 
             messages.push(ChatMessage {
                 role: "tool".to_string(),
-                content: tool_result,
+                content: Some(tool_result),
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: Some(tc_id),
