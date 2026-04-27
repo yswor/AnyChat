@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useChatStore } from "../stores/chatStore";
 import { useProviderStore } from "../stores/providerStore";
 import { IconGear, IconClose } from "./Icons";
+import Database from "@tauri-apps/plugin-sql";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { registerBackHandler, unregisterBackHandler } from "../utils/backButtonManager";
 import { DEFAULT_CONVERSATION_PARAMS } from "../constants/defaults";
@@ -66,6 +67,19 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         navigate("/settings");
         return;
       }
+
+      // Reuse existing empty conversation if one exists
+      const db = await Database.load("sqlite:anychat.db");
+      try {
+        const rows: { id: string }[] = await db.select(
+          "SELECT id FROM conversations WHERE id NOT IN (SELECT DISTINCT conversation_id FROM messages) ORDER BY updated_at DESC LIMIT 1",
+        );
+        if (rows.length > 0) {
+          onClose();
+          navigate(`/chat/${rows[0].id}`);
+          return;
+        }
+      } catch { /* fall through to create new */ }
 
       const id = await createConversation(provider.id, defaultModel, DEFAULT_CONVERSATION_PARAMS);
       onClose();
