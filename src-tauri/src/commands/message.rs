@@ -76,6 +76,7 @@ fn build_body(params: &StreamChatParams, messages: &[ChatMessage]) -> HashMap<St
             let mut m = serde_json::Map::new();
             m.insert("role".to_string(), serde_json::json!(&msg.role));
             m.insert("content".to_string(), serde_json::json!(&msg.content));
+            m.insert("name".to_string(), serde_json::json!(msg.name.as_deref().unwrap_or("")));
             if let Some(ref rc) = msg.reasoning_content {
                 m.insert("reasoning_content".to_string(), serde_json::json!(rc));
             }
@@ -84,9 +85,6 @@ fn build_body(params: &StreamChatParams, messages: &[ChatMessage]) -> HashMap<St
             }
             if let Some(ref tcid) = msg.tool_call_id {
                 m.insert("tool_call_id".to_string(), serde_json::json!(tcid));
-            }
-            if let Some(ref n) = msg.name {
-                m.insert("name".to_string(), serde_json::json!(n));
             }
             serde_json::Value::Object(m)
         })
