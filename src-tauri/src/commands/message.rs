@@ -87,8 +87,6 @@ fn build_body(params: &StreamChatParams, messages: &[ChatMessage]) -> HashMap<St
             }
             if let Some(ref n) = msg.name {
                 m.insert("name".to_string(), serde_json::json!(n));
-            } else {
-                m.insert("name".to_string(), serde_json::json!(null));
             }
             serde_json::Value::Object(m)
         })
@@ -96,26 +94,8 @@ fn build_body(params: &StreamChatParams, messages: &[ChatMessage]) -> HashMap<St
     body.insert("messages".to_string(), serde_json::json!(msgs));
     body.insert("stream".to_string(), serde_json::json!(true));
 
-    body.insert(
-        "tools".to_string(),
-        serde_json::json!([{
-            "type": "function",
-            "function": {
-                "name": "webfetch",
-                "description": "获取指定 URL 的网页内容",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "url": {
-                            "type": "string",
-                            "description": "要获取内容的 URL"
-                        }
-                    },
-                    "required": ["url"]
-                }
-            }
-        }]),
-    );
+    // FIXME: re-enable after debugging 400 error
+    // body.insert("tools".to_string(), serde_json::json!([...]));
 
     if params.max_tokens > 0 {
         body.insert("max_tokens".to_string(), serde_json::json!(params.max_tokens));
