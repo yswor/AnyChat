@@ -1,5 +1,32 @@
 # Changelog
 
+## [1.0.0] - 2026-04-27
+
+### Added
+- DeepSeek + Kimi 供应商余额查询，设置页自动刷新
+- Android 返回键全局拦截，弹窗打开时优先关闭弹窗
+- Kimi 供应商模板（api.moonshot.cn/v1，支持思考模式 + 余额查询）
+- 数据驱动常量文件：`constants/defaults.ts`、`constants/attachments.ts`
+
+### Changed
+- **breaking** thinking 参数 key 名由 provider 模板配置驱动（不再硬编码 `thinking` / `reasoning_effort`）
+- 余额响应解析改为通用 JSON 字段检测，支持 DeepSeek / Kimi 两种格式
+- 模板选择器改为 `PROVIDER_TEMPLATES` 循环渲染，增删模板只需改配置
+- reasoning effort 选项由模板 `reasoning_effort_options` 配置驱动
+- 参数滑块范围从 JSX 行内抽出到 `PARAMETER_RANGES` 常量
+- 流式超时从总超时改为空闲超时（思考阶段不误杀连接）
+- 阅读模式流式输出时实时展示正文，达截断字数后显示预览 + loading
+- 移除 OpenAI / OpenRouter 预设模板
+- 移除 SQL 列名字符串匹配的脆弱迁移兜底
+
+### Fixed
+- 修复思考模式下写长文时流式连接中途断开
+- 修复 `frequency_penalty` / `presence_penalty` 从 DB 重载后回退为 0
+- 修复设置弹窗切对话时 system prompt 等字段残留上一对话值（`key={id}`）
+- 修复 placeholder 硬编码 DeepSeek 文案
+- 修复 `||` 应为 `??` 的 nullish 语义问题
+- 修复新建对话默认参数重复定义和多处散落的 `"high"` 魔数
+
 ## [0.5.0] - 2026-04-27
 
 ### Added

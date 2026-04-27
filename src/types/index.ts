@@ -15,6 +15,7 @@ export interface Provider {
     max_tokens: number;
     top_p: number;
   };
+  reasoning_effort_options?: string[];
   balance_path?: string;
   created_at: string;
   updated_at: string;
@@ -89,6 +90,7 @@ export interface ProviderTemplate {
     switch: string;
     effort: string;
   };
+  reasoning_effort_options?: string[];
   balance_path?: string;
 }
 
@@ -102,7 +104,20 @@ export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = {
       switch: "thinking",
       effort: "reasoning_effort",
     },
+    reasoning_effort_options: ["high", "max"],
     balance_path: "/user/balance",
+  },
+  kimi: {
+    name: "Kimi",
+    base_url: "https://api.moonshot.cn/v1",
+    description: "api.moonshot.cn",
+    supports_thinking: true,
+    thinking_param: {
+      switch: "thinking",
+      effort: "reasoning_effort",
+    },
+    reasoning_effort_options: ["high", "max"],
+    balance_path: "/users/me/balance",
   },
   custom: {
     name: "",

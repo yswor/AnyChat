@@ -24,7 +24,19 @@ pub struct StreamChatParams {
     pub presence_penalty: f64,
     pub thinking_enabled: bool,
     pub reasoning_effort: Option<String>,
+    #[serde(default = "default_thinking_switch_key")]
+    pub thinking_switch_key: String,
+    #[serde(default = "default_thinking_effort_key")]
+    pub thinking_effort_key: String,
     pub stream: bool,
+}
+
+fn default_thinking_switch_key() -> String {
+    "thinking".to_string()
+}
+
+fn default_thinking_effort_key() -> String {
+    "reasoning_effort".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,15 +113,15 @@ pub async fn stream_chat_request(
     // thinking mode control
     if params.thinking_enabled {
         body.insert(
-            "thinking".to_string(),
+            params.thinking_switch_key.clone(),
             serde_json::json!({"type": "enabled"}),
         );
-        if let Some(effort) = params.reasoning_effort {
-            body.insert("reasoning_effort".to_string(), serde_json::json!(effort));
+        if let Some(effort) = &params.reasoning_effort {
+            body.insert(params.thinking_effort_key.clone(), serde_json::json!(effort));
         }
     } else {
         body.insert(
-            "thinking".to_string(),
+            params.thinking_switch_key.clone(),
             serde_json::json!({"type": "disabled"}),
         );
     }

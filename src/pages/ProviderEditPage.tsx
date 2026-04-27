@@ -21,8 +21,9 @@ export function ProviderEditPage() {
   const [models, setModels] = useState<string[]>([]);
   const [defaultModel, setDefaultModel] = useState("");
   const [supportsThinking, setSupportsThinking] = useState(false);
-  const [thinkingSwitch, setThinkingSwitch] = useState("thinking");
-  const [thinkingEffort, setThinkingEffort] = useState("reasoning_effort");
+  const defaultThinkingParam = PROVIDER_TEMPLATES.custom.thinking_param;
+  const [thinkingSwitch, setThinkingSwitch] = useState(defaultThinkingParam?.switch ?? "thinking");
+  const [thinkingEffort, setThinkingEffort] = useState(defaultThinkingParam?.effort ?? "reasoning_effort");
 
 
   const [testing, setTesting] = useState(false);

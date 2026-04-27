@@ -58,6 +58,7 @@ function normalizeProvider(row: any): Provider {
     supports_thinking: Boolean(row.supports_thinking),
     thinking_param: thinkingParam,
     balance_path: deriveBalancePath(row.base_url),
+    reasoning_effort_options: deriveEffortOptions(row.base_url),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -67,6 +68,15 @@ function deriveBalancePath(base_url: string): string | undefined {
   for (const tpl of Object.values(PROVIDER_TEMPLATES)) {
     if (tpl.balance_path && base_url?.startsWith(tpl.base_url)) {
       return tpl.balance_path;
+    }
+  }
+  return undefined;
+}
+
+function deriveEffortOptions(base_url: string): string[] | undefined {
+  for (const tpl of Object.values(PROVIDER_TEMPLATES)) {
+    if (tpl.reasoning_effort_options && base_url?.startsWith(tpl.base_url)) {
+      return tpl.reasoning_effort_options;
     }
   }
   return undefined;

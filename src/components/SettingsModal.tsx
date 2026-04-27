@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { IconClose } from "./Icons";
 import { registerBackHandler, unregisterBackHandler } from "../utils/backButtonManager";
+import { PARAMETER_RANGES } from "../constants/defaults";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -14,6 +15,7 @@ interface SettingsModalProps {
   reasoningEffort: string;
   thinkingEnabled: boolean;
   supportsThinking: boolean;
+  reasoningEffortOptions?: string[];
   onSave: (params: {
     temperature: number;
     maxTokens: number;
@@ -37,6 +39,7 @@ export function SettingsModal({
   reasoningEffort: initEffort,
   thinkingEnabled,
   supportsThinking,
+  reasoningEffortOptions,
   onSave,
 }: SettingsModalProps) {
   const [temperature, setTemperature] = useState(initTemp);
@@ -79,8 +82,9 @@ export function SettingsModal({
                 value={reasoningEffort}
                 onChange={(e) => setReasoningEffort(e.target.value)}
               >
-                <option value="high">High</option>
-                <option value="max">Max</option>
+                {(reasoningEffortOptions || ["high", "max"]).map((v) => (
+                  <option key={v} value={v}>{v}</option>
+                ))}
               </select>
               <p className="setting-item__hint">控制模型推理深度，max 在复杂任务上表现更好</p>
             </label>
@@ -93,9 +97,9 @@ export function SettingsModal({
                 <div className="setting-item__control">
                   <input
                     type="range"
-                    min="0"
-                    max="2"
-                    step="0.1"
+                    min={PARAMETER_RANGES.temperature.min}
+                    max={PARAMETER_RANGES.temperature.max}
+                    step={PARAMETER_RANGES.temperature.step}
                     value={temperature}
                     onChange={(e) => setTemperature(parseFloat(e.target.value))}
                   />
@@ -109,9 +113,9 @@ export function SettingsModal({
                 <div className="setting-item__control">
                   <input
                     type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
+                    min={PARAMETER_RANGES.topP.min}
+                    max={PARAMETER_RANGES.topP.max}
+                    step={PARAMETER_RANGES.topP.step}
                     value={topP}
                     onChange={(e) => setTopP(parseFloat(e.target.value))}
                   />
@@ -125,9 +129,9 @@ export function SettingsModal({
                 <div className="setting-item__control">
                   <input
                     type="range"
-                    min="-2"
-                    max="2"
-                    step="0.1"
+                    min={PARAMETER_RANGES.frequencyPenalty.min}
+                    max={PARAMETER_RANGES.frequencyPenalty.max}
+                    step={PARAMETER_RANGES.frequencyPenalty.step}
                     value={frequencyPenalty}
                     onChange={(e) => setFrequencyPenalty(parseFloat(e.target.value))}
                   />
@@ -141,9 +145,9 @@ export function SettingsModal({
                 <div className="setting-item__control">
                   <input
                     type="range"
-                    min="-2"
-                    max="2"
-                    step="0.1"
+                    min={PARAMETER_RANGES.presencePenalty.min}
+                    max={PARAMETER_RANGES.presencePenalty.max}
+                    step={PARAMETER_RANGES.presencePenalty.step}
                     value={presencePenalty}
                     onChange={(e) => setPresencePenalty(parseFloat(e.target.value))}
                   />
@@ -160,8 +164,8 @@ export function SettingsModal({
               type="number"
               value={maxTokens}
               onChange={(e) => setMaxTokens(parseInt(e.target.value) || 0)}
-              min={1}
-              max={384000}
+              min={PARAMETER_RANGES.maxTokens.min}
+              max={PARAMETER_RANGES.maxTokens.max}
               placeholder="留空为 API 默认"
             />
             <p className="setting-item__hint">限制单次回复的最大长度，0 = 使用 API 默认值</p>

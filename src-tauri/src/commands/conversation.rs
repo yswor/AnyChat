@@ -15,6 +15,10 @@ pub struct StreamChatInput {
     pub presence_penalty: f64,
     pub thinking_enabled: bool,
     pub reasoning_effort: Option<String>,
+    #[serde(default)]
+    pub thinking_switch_key: Option<String>,
+    #[serde(default)]
+    pub thinking_effort_key: Option<String>,
 }
 
 #[tauri::command]
@@ -33,6 +37,8 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
         presence_penalty: input.presence_penalty,
         thinking_enabled: input.thinking_enabled,
         reasoning_effort: input.reasoning_effort,
+        thinking_switch_key: input.thinking_switch_key.unwrap_or_else(|| "thinking".into()),
+        thinking_effort_key: input.thinking_effort_key.unwrap_or_else(|| "reasoning_effort".into()),
         stream: true,
     };
 

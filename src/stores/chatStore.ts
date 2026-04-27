@@ -105,28 +105,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
         "SELECT id, title, provider_id, model, temperature, max_tokens, top_p, frequency_penalty, presence_penalty, system_prompt, thinking_enabled, reasoning_effort, created_at, updated_at FROM conversations ORDER BY updated_at DESC",
       );
       set({ conversations: rows.map(normalizeConversation) });
-    } catch (err) {
-      const errorStr = String(err);
-      if (errorStr.includes("no column named") || errorStr.includes("index out of bounds")) {
-        // Schema mismatch, add missing columns
-        try {
-          await d.execute("ALTER TABLE conversations ADD COLUMN frequency_penalty REAL NOT NULL DEFAULT 0.0");
-        } catch {
-          // Column may already exist
-        }
-        try {
-          await d.execute("ALTER TABLE conversations ADD COLUMN presence_penalty REAL NOT NULL DEFAULT 0.0");
-        } catch {
-          // Column may already exist
-        }
-        // Retry loading with explicit columns
-        const rows: unknown[] = await d.select(
-          "SELECT id, title, provider_id, model, temperature, max_tokens, top_p, frequency_penalty, presence_penalty, system_prompt, thinking_enabled, reasoning_effort, created_at, updated_at FROM conversations ORDER BY updated_at DESC",
-        );
-        set({ conversations: rows.map(normalizeConversation) });
-      } else {
-        throw err;
-      }
+    } catch {
+      // Retry after ensuring schema columns exist
+      try {
+        await d.execute("ALTER TABLE conversations ADD COLUMN frequency_penalty REAL NOT NULL DEFAULT 0.0");
+      } catch { /* already exists */ }
+      try {
+        await d.execute("ALTER TABLE conversations ADD COLUMN presence_penalty REAL NOT NULL DEFAULT 0.0");
+      } catch { /* already exists */ }
+      const rows: unknown[] = await d.select(
+        "SELECT id, title, provider_id, model, temperature, max_tokens, top_p, frequency_penalty, presence_penalty, system_prompt, thinking_enabled, reasoning_effort, created_at, updated_at FROM conversations ORDER BY updated_at DESC",
+      );
+      set({ conversations: rows.map(normalizeConversation) });
     }
   },
 
@@ -339,6 +329,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!rawProv) return "";
     const apiKey = rawProv.api_key ?? "";
 
+    let thinkingSwitchKey: string | undefined;
+    let thinkingEffortKey: string | undefined;
+    try {
+      const tp = typeof rawProv.thinking_param === "string"
+        ? JSON.parse(rawProv.thinking_param)
+        : rawProv.thinking_param;
+      if (tp) {
+        thinkingSwitchKey = tp.switch;
+        thinkingEffortKey = tp.effort;
+      }
+    } catch { /* ignore parse errors */ }
+
     const now = new Date().toISOString();
     let newMessages = messages;
     const displayUserContent = displayContent ?? content;
@@ -471,6 +473,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
           presence_penalty: conv.presence_penalty ?? 0,
           thinking_enabled: conv.thinking_enabled,
           reasoning_effort: conv.reasoning_effort || null,
+          thinking_switch_key: thinkingSwitchKey ?? null,
+          thinking_effort_key: thinkingEffortKey ?? null,
         },
       });
 

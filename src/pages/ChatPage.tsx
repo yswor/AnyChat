@@ -362,6 +362,7 @@ export function ChatPage() {
           reasoningEffort={conv.reasoning_effort}
           thinkingEnabled={conv.thinking_enabled}
           supportsThinking={isThinkingSupported}
+          reasoningEffortOptions={provider?.reasoning_effort_options}
           onSave={handleSettingsSave}
         />
       )}

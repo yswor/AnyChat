@@ -57,20 +57,6 @@ pub struct BalanceInfo {
     pub topped_up_balance: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-struct BalanceApiResponse {
-    is_available: bool,
-    balance_infos: Vec<BalanceApiItem>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct BalanceApiItem {
-    currency: String,
-    total_balance: String,
-    granted_balance: String,
-    topped_up_balance: String,
-}
-
 pub async fn fetch_balance(
     base_url: &str,
     balance_path: &str,
@@ -103,24 +89,42 @@ pub async fn fetch_balance(
         )));
     }
 
-    let data: BalanceApiResponse = resp
+    let raw: serde_json::Value = resp
         .json()
         .await
         .map_err(|e| AppError::Http(format!("Failed to parse balance response: {}", e)))?;
 
-    data.balance_infos.into_iter().next().map_or_else(
-        || {
-            Err(AppError::Http(
-                "Balance response contained no balance infos".into(),
-            ))
-        },
-        |item| {
-            Ok(BalanceInfo {
-                currency: item.currency,
-                total_balance: item.total_balance,
-                granted_balance: item.granted_balance,
-                topped_up_balance: item.topped_up_balance,
-            })
-        },
-    )
+    parse_balance_response(&raw)
+}
+
+fn parse_balance_response(raw: &serde_json::Value) -> Result<BalanceInfo, AppError> {
+    // DeepSeek format: { "is_available": true, "balance_infos": [{ "currency": "CNY", ... }] }
+    if let Some(infos) = raw.get("balance_infos").and_then(|v| v.as_array()) {
+        if let Some(item) = infos.first() {
+            return Ok(BalanceInfo {
+                currency: item["currency"].as_str().unwrap_or("CNY").to_string(),
+                total_balance: item["total_balance"].as_str().unwrap_or("0").to_string(),
+                granted_balance: item["granted_balance"].as_str().unwrap_or("0").to_string(),
+                topped_up_balance: item["topped_up_balance"].as_str().unwrap_or("0").to_string(),
+            });
+        }
+        return Err(AppError::Http(
+            "Balance response contained no balance infos".into(),
+        ));
+    }
+
+    // Kimi format: { "code": 0, "data": { "available_balance": 49.58, ... } }
+    if let Some(data) = raw.get("data") {
+        let available = data.get("available_balance").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        return Ok(BalanceInfo {
+            currency: "CNY".to_string(),
+            total_balance: format!("{:.2}", available),
+            granted_balance: "0".to_string(),
+            topped_up_balance: "0".to_string(),
+        });
+    }
+
+    Err(AppError::Http(
+        "Unrecognized balance response format".into(),
+    ))
 }
