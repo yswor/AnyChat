@@ -1,0 +1,113 @@
+export interface Provider {
+  id: string;
+  name: string;
+  base_url: string;
+  api_key: string;
+  models: string[];
+  default_model?: string;
+  supports_thinking: boolean;
+  thinking_param?: {
+    switch: string;
+    effort: string;
+  };
+  default_params?: {
+    temperature: number;
+    max_tokens: number;
+    top_p: number;
+  };
+  balance_path?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Conversation {
+  id: string;
+  title?: string;
+  provider_id: string;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  top_p: number;
+  frequency_penalty: number;
+  presence_penalty: number;
+  system_prompt: string;
+  thinking_enabled: boolean;
+  reasoning_effort: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Message {
+  id: string;
+  conversation_id: string;
+  role: "system" | "user" | "assistant";
+  content: string;
+  reasoning_content?: string;
+  attachment_type?: string;
+  attachment_data?: string;
+  tokens?: number;
+  created_at: string;
+}
+
+export interface ModelInfo {
+  id: string;
+  object: string;
+  owned_by: string;
+}
+
+export interface StreamChunk {
+  content: string | null;
+  reasoning_content: string | null;
+  done: boolean;
+  error: string | null;
+}
+
+export interface BalanceInfo {
+  currency: string;
+  total_balance: string;
+  granted_balance: string;
+  topped_up_balance: string;
+}
+
+export interface ChatParams {
+  base_url: string;
+  api_key: string;
+  model: string;
+  temperature: number;
+  max_tokens: number;
+  top_p: number;
+  thinking_enabled: boolean;
+  reasoning_effort: string;
+}
+
+export interface ProviderTemplate {
+  name: string;
+  base_url: string;
+  description?: string;
+  supports_thinking: boolean;
+  thinking_param?: {
+    switch: string;
+    effort: string;
+  };
+  balance_path?: string;
+}
+
+export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = {
+  deepseek: {
+    name: "DeepSeek",
+    base_url: "https://api.deepseek.com",
+    description: "api.deepseek.com",
+    supports_thinking: true,
+    thinking_param: {
+      switch: "thinking",
+      effort: "reasoning_effort",
+    },
+    balance_path: "/user/balance",
+  },
+  custom: {
+    name: "",
+    base_url: "",
+    description: "空白配置",
+    supports_thinking: false,
+  },
+};

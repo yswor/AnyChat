@@ -1,0 +1,183 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Dark theme (default) */
+:root {
+  --bg-primary: #0f0f0f;
+  --bg-secondary: #1a1a1a;
+  --bg-tertiary: #252525;
+  --text-primary: #e8e8e8;
+  --text-secondary: #a0a0a0;
+  --accent: #6c8cff;
+  --accent-hover: #5a7aee;
+  --border: #333333;
+  --danger: #ff4d4f;
+  --success: #52c41a;
+  --reasoning-bg: #1a1f2e;
+  --reasoning-border: #2a3a5c;
+}
+
+/* Light theme */
+[data-theme="light"] {
+  --bg-primary: #ffffff;
+  --bg-secondary: #f5f5f5;
+  --bg-tertiary: #e8e8e8;
+  --text-primary: #1a1a1a;
+  --text-secondary: #666666;
+  --accent: #4a6cf7;
+  --accent-hover: #3a5ce7;
+  --border: #e0e0e0;
+  --danger: #ff4d4f;
+  --success: #52c41a;
+  --reasoning-bg: #eef1f8;
+  --reasoning-border: #c5cfe8;
+}
+
+html {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background-color: var(--bg-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+.app-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== Reader Mode - ChatBubble Preview ===== */
+.chat-bubble__content--preview {
+  position: relative;
+  max-height: calc(6.5em + 24px);
+  overflow: hidden;
+  cursor: pointer;
+  padding-bottom: 24px;
+}
+
+.chat-bubble__content--preview::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: calc(3em + 24px);
+  background: linear-gradient(to bottom, transparent 0%, var(--bg-secondary) 3em, var(--bg-secondary) 100%);
+  pointer-events: none;
+}
+
+.chat-bubble__preview-hint {
+  position: absolute;
+  bottom: 8px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 600;
+  z-index: 2;
+  pointer-events: none;
+  text-shadow: 0 1px 3px var(--bg-secondary), 0 0 8px var(--bg-secondary);
+}
+
+.chat-bubble__preview-loading {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+
+/* ===== Reader Mode - Streaming Placeholder ===== */
+.chat-bubble__content--placeholder {
+  min-width: 200px;
+  min-height: 48px;
+  background: var(--bg-secondary);
+  border-radius: 4px 16px 16px 16px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chat-bubble__content--placeholder .chat-bubble__preview-hint {
+  position: static;
+}
+
+/* ===== Reader Overlay ===== */
+.reader-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-primary);
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  animation: fadeInOverlay 0.2s ease;
+}
+
+.reader-overlay__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: max(10px, env(safe-area-inset-top)) 16px 10px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  min-height: 48px;
+  flex-shrink: 0;
+}
+
+.reader-overlay__back {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.reader-overlay__back:hover {
+  background: var(--bg-tertiary);
+}
+
+.reader-overlay__meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.reader-overlay__title {
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reader-overlay__subtitle {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.reader-overlay__content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  line-height: 1.8;
+}
+
+
