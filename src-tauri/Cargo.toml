@@ -27,3 +27,4 @@ base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
+fast_html2md = "0.0.61"

@@ -41,7 +41,7 @@ export interface Conversation {
 export interface Message {
   id: string;
   conversation_id: string;
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
   reasoning_content?: string;
   attachment_type?: string;
@@ -53,6 +53,7 @@ export interface Message {
     cached: number;
   };
   provider_id?: string;
+  tool_call_id?: string;
   created_at: string;
 }
 
@@ -70,6 +71,7 @@ export interface StreamChunk {
   usage_prompt?: number;
   usage_completion?: number;
   usage_cached?: number;
+  tool_status?: string;
 }
 
 export interface BalanceInfo {

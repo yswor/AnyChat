@@ -2,6 +2,7 @@ mod api_client;
 mod commands;
 mod error;
 mod store;
+mod web_fetch;
 
 use tauri_plugin_sql::{Migration, MigrationKind};
 
@@ -26,6 +27,12 @@ pub fn run() {
             version: 3,
             description: "add usage_details and provider_id to messages",
             sql: include_str!("../migrations/003_add_usage_provider.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 4,
+            description: "add tool_call_id to messages",
+            sql: include_str!("../migrations/004_add_tool_call_id.sql"),
             kind: MigrationKind::Up,
         },
     ];

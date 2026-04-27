@@ -14,6 +14,7 @@ interface ChatState {
     reasoning: string;
     isStreaming: boolean;
     error: string | null;
+    toolStatus: string | null;
   };
   loading: boolean;
 
@@ -62,7 +63,7 @@ function resetActiveStream() {
   activeUnlisten?.();
   activeUnlisten = null;
   useChatStore.setState({
-    streamState: { content: "", reasoning: "", isStreaming: false, error: null },
+    streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null },
   });
 }
 
@@ -127,6 +128,7 @@ function normalizeMessage(row: any): Message {
     tokens: row.tokens != null ? Number(row.tokens) : undefined,
     usage_details: usageDetails,
     provider_id: row.provider_id || undefined,
+    tool_call_id: row.tool_call_id || undefined,
     created_at: row.created_at,
   };
 }
@@ -135,7 +137,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   currentConversationId: null,
   messages: [],
-  streamState: { content: "", reasoning: "", isStreaming: false, error: null },
+  streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null },
   loading: false,
 
   loadConversations: async () => {
@@ -429,9 +431,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       );
 
       newMessages = [...messages, userMsg];
-      set({ messages: newMessages, streamState: { content: "", reasoning: "", isStreaming: true, error: null } });
+      set({ messages: newMessages, streamState: { content: "", reasoning: "", isStreaming: true, error: null, toolStatus: null } });
     } else {
-      set({ streamState: { content: "", reasoning: "", isStreaming: true, error: null } });
+      set({ streamState: { content: "", reasoning: "", isStreaming: true, error: null, toolStatus: null } });
     }
 
     // Build API messages — use original `content` for the user message with displayContent
@@ -503,7 +505,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             };
           }
           set((s) => ({
-            streamState: { ...s.streamState, isStreaming: false },
+            streamState: { ...s.streamState, isStreaming: false, toolStatus: null },
           }));
         } else if (chunk.error) {
           set((s) => ({
@@ -512,6 +514,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
               isStreaming: false,
               error: chunk.error,
             },
+          }));
+        } else if (chunk.tool_status) {
+          set((s) => ({
+            streamState: { ...s.streamState, toolStatus: chunk.tool_status ?? null },
           }));
         } else {
           set((s) => {
@@ -593,7 +599,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       activeUnlisten = null;
 
       set((s) => ({
-        streamState: { content: "", reasoning: "", isStreaming: false, error: null },
+        streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null },
         messages: s.messages.map((m) =>
           m.id === assistantMsgId
             ? { ...m, content: finalContent, reasoning_content: finalReasoning || undefined, tokens: totalTokens, usage_details: usageDetails }
@@ -622,7 +628,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   resetStream: () => {
     set({
-      streamState: { content: "", reasoning: "", isStreaming: false, error: null },
+      streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null },
     });
   },
 

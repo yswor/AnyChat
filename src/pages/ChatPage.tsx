@@ -281,6 +281,11 @@ export function ChatPage() {
               onDelete={handleDelete}
             />
           ))}
+        {streamState.toolStatus && (
+          <div className="chat-page__tool-status">
+            {streamState.toolStatus}
+          </div>
+        )}
         {streamState.error && (
           <div className="chat-page__error">
             错误: {streamState.error}

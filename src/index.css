@@ -487,13 +487,24 @@
 }
 
 .chat-page__error {
-  padding: 12px;
-  margin: 8px 0;
-  background: rgba(255, 77, 79, 0.15);
+  background: var(--bg-secondary);
+  margin: 8px 16px;
+  padding: 10px 14px;
   border: 1px solid var(--danger);
   border-radius: 8px;
   color: var(--danger);
   font-size: 14px;
+}
+
+.chat-page__tool-status {
+  background: var(--bg-secondary);
+  margin: 8px 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 13px;
+  animation: fadeIn 0.2s ease;
 }
 
 .chat-page__footer {
