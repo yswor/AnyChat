@@ -2,7 +2,6 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useChatStore } from "../stores/chatStore";
 import { useProviderStore } from "../stores/providerStore";
-import Database from "@tauri-apps/plugin-sql";
 import { ChatBubble } from "../components/ChatBubble";
 import { ReaderOverlay } from "../components/ReaderOverlay";
 import { ModelSelector } from "../components/ModelSelector";
@@ -269,7 +268,6 @@ export function ChatPage() {
 
   const handleRegenerate = async (msgIndex: number) => {
     if (!id || streamState.isStreaming) return;
-    // Find the preceding user message
     let userMsgIdx = -1;
     for (let i = msgIndex - 1; i >= 0; i--) {
       if (messages[i]?.role === "user") {
@@ -279,17 +277,10 @@ export function ChatPage() {
     }
     if (userMsgIdx === -1) return;
 
-    const db = await Database.load("sqlite:anychat.db");
     const assistantMsg = messages[msgIndex];
-    // Delete only the current assistant reply from DB
-    await db.execute("DELETE FROM messages WHERE id = $1", [assistantMsg.id]);
-
-    // Remove from local state
-    const cleanMessages = messages.filter((_, i) => i !== msgIndex);
-    useChatStore.setState({ messages: cleanMessages, currentConversationId: id });
+    await deleteMessage(assistantMsg.id);
     setCurrentConversation(id);
 
-    // Silently re-send the user message (skip adding duplicate user msg)
     setIsStreamingLocal(true);
     await streamChat(messages[userMsgIdx].content, true);
     setIsStreamingLocal(false);

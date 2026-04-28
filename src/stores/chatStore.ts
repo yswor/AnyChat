@@ -14,7 +14,6 @@ interface ChatState {
     reasoning: string;
     isStreaming: boolean;
     error: string | null;
-    toolStatus: string | null;
     toolCallNodes: ToolCallNode[];
   };
   loading: boolean;
@@ -64,8 +63,23 @@ function resetActiveStream() {
   activeUnlisten?.();
   activeUnlisten = null;
   useChatStore.setState({
-    streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null, toolCallNodes: [] },
+    streamState: emptyStreamState(),
   });
+}
+
+function emptyStreamState() {
+  return { content: "", reasoning: "", isStreaming: false, error: null, toolCallNodes: [] as ToolCallNode[] };
+}
+
+type ApiMessage = { role: string; content: string; reasoning_content?: string; tool_calls?: ToolCallEvent[]; tool_call_id?: string };
+
+function tryParseJson<T>(raw: unknown, fallback: T): T {
+  if (!raw) return fallback;
+  try {
+    return (typeof raw === "string" ? JSON.parse(raw) : raw) as T;
+  } catch {
+    return fallback;
+  }
 }
 
 async function getDb(): Promise<Database> {
@@ -108,26 +122,8 @@ function reconstructContent(displayContent: string, attachmentData: string): str
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalizeMessage(row: any): Message {
-  let usageDetails: Message["usage_details"];
-  if (row.usage_details) {
-    try {
-      usageDetails = typeof row.usage_details === "string"
-        ? JSON.parse(row.usage_details)
-        : row.usage_details;
-    } catch {
-      usageDetails = undefined;
-    }
-  }
-  let toolCalls: Message["tool_calls"];
-  if (row.tool_calls) {
-    try {
-      toolCalls = typeof row.tool_calls === "string"
-        ? JSON.parse(row.tool_calls)
-        : row.tool_calls;
-    } catch {
-      toolCalls = undefined;
-    }
-  }
+  const usageDetails = tryParseJson<Message["usage_details"]>(row.usage_details, undefined);
+  const toolCalls = tryParseJson<Message["tool_calls"]>(row.tool_calls, undefined);
   return {
     id: row.id,
     conversation_id: row.conversation_id,
@@ -149,7 +145,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   currentConversationId: null,
   messages: [],
-  streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null, toolCallNodes: [] },
+  streamState: emptyStreamState(),
   loading: false,
 
   loadConversations: async () => {
@@ -443,18 +439,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       );
 
       newMessages = [...messages, userMsg];
-      set({ messages: newMessages, streamState: { content: "", reasoning: "", isStreaming: true, error: null, toolStatus: null, toolCallNodes: [] } });
+      set({ messages: newMessages, streamState: { content: "", reasoning: "", isStreaming: true, error: null, toolCallNodes: [] } });
     } else {
-      set({ streamState: { content: "", reasoning: "", isStreaming: true, error: null, toolStatus: null, toolCallNodes: [] } });
+      set({ streamState: { content: "", reasoning: "", isStreaming: true, error: null, toolCallNodes: [] } });
     }
 
     // Build API messages — use original `content` for the user message with displayContent
-    const apiMessages: { role: string; content: string; reasoning_content?: string; tool_calls?: ToolCallEvent[]; tool_call_id?: string }[] = [];
+    const apiMessages: ApiMessage[] = [];
     if (conv.system_prompt) {
       apiMessages.push({ role: "system", content: conv.system_prompt });
     }
     for (const msg of newMessages) {
-      const m: { role: string; content: string; reasoning_content?: string; tool_calls?: ToolCallEvent[]; tool_call_id?: string } = {
+      const m: ApiMessage = {
         role: msg.role,
         content: (displayContent != null && msg.id === displayUserMsgId)
           ? content
@@ -506,7 +502,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const eventName = `chat-stream:${currentConversationId}`;
       const { listen } = await import("@tauri-apps/api/event");
 
-      const usageRef: { current: { prompt: number; completion: number; cached: number } | null } = { current: null };
+      const usage = { current: null as { prompt: number; completion: number; cached: number } | null };
 
       const unlisten = await listen<StreamChunk>(eventName, (event) => {
         if (get().currentConversationId !== currentConversationId) {
@@ -587,14 +583,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         if (chunk.done && !chunk.error) {
           if (chunk.usage_prompt || chunk.usage_completion || chunk.usage_cached) {
-            usageRef.current = {
+            usage.current = {
               prompt: chunk.usage_prompt ?? 0,
               completion: chunk.usage_completion ?? 0,
               cached: chunk.usage_cached ?? 0,
             };
           }
           set((s) => ({
-            streamState: { ...s.streamState, isStreaming: false, toolStatus: null },
+            streamState: { ...s.streamState, isStreaming: false },
           }));
         } else if (chunk.error) {
           set((s) => ({
@@ -604,10 +600,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
               error: chunk.error,
             },
           }));
-        } else if (chunk.tool_status !== undefined) {
-          set((s) => ({
-            streamState: { ...s.streamState, toolStatus: chunk.tool_status || null },
-          }));
         } else {
           set((s) => {
             const newContent = chunk.content
@@ -616,17 +608,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
             const newReasoning = chunk.reasoning_content
               ? s.streamState.reasoning + chunk.reasoning_content
               : s.streamState.reasoning;
+            const msgs = [...s.messages];
+            msgs[msgs.length - 1] = {
+              ...msgs[msgs.length - 1],
+              content: newContent,
+              reasoning_content: newReasoning || undefined,
+            };
             return {
               streamState: {
                 ...s.streamState,
                 content: newContent,
                 reasoning: newReasoning,
               },
-              messages: s.messages.map((m) =>
-                m.id === assistantMsgId
-                  ? { ...m, content: newContent, reasoning_content: newReasoning || undefined }
-                  : m,
-              ),
+              messages: msgs,
             };
           });
         }
@@ -655,9 +649,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const finalReasoning = get().streamState.reasoning;
 
-      const streamUsage = usageRef.current;
-      const totalTokens = streamUsage ? (streamUsage.prompt + streamUsage.completion) : undefined;
-      const usageDetails = streamUsage ?? undefined;
+      const totalTokens = usage.current ? (usage.current.prompt + usage.current.completion) : undefined;
+      const usageDetails = usage.current ?? undefined;
 
       try {
         await d.execute(
@@ -688,7 +681,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       activeUnlisten = null;
 
       set((s) => ({
-        streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null, toolCallNodes: [] },
+        streamState: emptyStreamState(),
         messages: s.messages.map((m) =>
           m.id === assistantMsgId
             ? { ...m, content: finalContent, reasoning_content: finalReasoning || undefined, tokens: totalTokens, usage_details: usageDetails }
@@ -698,8 +691,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       return finalContent;
     } catch (err) {
-      activeUnlisten?.();
-      activeUnlisten = null;
+      resetActiveStream();
       set((s) => ({
         streamState: {
           ...s.streamState,
@@ -716,9 +708,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   resetStream: () => {
-    set({
-      streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null, toolCallNodes: [] },
-    });
+    set({ streamState: emptyStreamState() });
   },
 
   getProviderTokens: async (providerId: string) => {
