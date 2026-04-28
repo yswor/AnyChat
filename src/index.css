@@ -496,7 +496,7 @@
   font-size: 14px;
 }
 
-.chat-page__tool-status {
+.chat-bubble__tool-status {
   background: var(--bg-secondary);
   margin: 8px 16px;
   padding: 10px 14px;
@@ -698,7 +698,8 @@
 
 .chat-bubble--user .chat-bubble__body {
   display: flex;
-  justify-content: flex-end;
+  flex-direction: column;
+  align-items: flex-end;
 }
 
 .chat-bubble--user .chat-bubble__content {
