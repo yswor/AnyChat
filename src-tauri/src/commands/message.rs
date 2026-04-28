@@ -380,7 +380,7 @@ async fn do_sse_request(
     })
 }
 
-async fn execute_tool(name: &str, args: &serde_json::Value) -> String {
+async fn execute_tool(name: &str, args: &serde_json::Value, app: &tauri::AppHandle) -> String {
     match name {
         "webfetch" => {
             let url = args["url"].as_str().unwrap_or("");
@@ -391,7 +391,7 @@ async fn execute_tool(name: &str, args: &serde_json::Value) -> String {
             let format = args["format"].as_str().unwrap_or("markdown");
             let timeout = args["timeout"].as_u64().unwrap_or(30);
             tracing::info!("[tool] Executing webfetch for {} (format={}, timeout={}s)", url, format, timeout);
-            match web_fetch::fetch_url(url, format, timeout).await {
+            match web_fetch::fetch_url(url, format, timeout, app).await {
                 Ok(content) => {
                     tracing::info!(
                         "[tool] webfetch succeeded for {}: {} chars",
@@ -557,7 +557,7 @@ pub async fn stream_chat_request(
                 },
             );
 
-            let tool_result = execute_tool(func_name, &args).await;
+            let tool_result = execute_tool(func_name, &args, &app).await;
             let tc_id = tc["id"].as_str().unwrap_or("").to_string();
 
             messages.push(ChatMessage {

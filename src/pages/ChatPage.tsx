@@ -13,6 +13,8 @@ import type { AttachedFile } from "../components/AttachmentBar";
 import { IconSend, IconStop, IconAttach } from "../components/Icons";
 import { MAX_FILE_SIZE_BYTES, ALLOWED_FILE_EXTENSIONS } from "../constants/attachments";
 import type { Conversation, Message } from "../types";
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 
 export function ChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -94,6 +96,40 @@ export function ChatPage() {
     };
     window.addEventListener("shared-text", handleSharedText);
     return () => window.removeEventListener("shared-text", handleSharedText);
+  }, []);
+
+  // WebView-based fetch fallback for Cloudflare-protected URLs
+  useEffect(() => {
+    const unlisten = listen<{ id: string; url: string }>("webfetch-request", async (event) => {
+      const { id, url } = event.payload;
+      try {
+        const resp = await fetch(url);
+        const buf = await resp.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let body = "";
+        for (let i = 0; i < bytes.length; i += 4096) {
+          body += String.fromCharCode(...bytes.subarray(i, Math.min(i + 4096, bytes.length)));
+        }
+        const bodyBase64 = btoa(body);
+        const contentType = resp.headers.get("content-type") || "";
+        await invoke("webfetch_result", {
+          id,
+          status: resp.status,
+          content_type: contentType,
+          body_base64: bodyBase64,
+        });
+      } catch (err) {
+        await invoke("webfetch_result", {
+          id,
+          status: 0,
+          content_type: "",
+          body_base64: "",
+        }).catch(() => {});
+      }
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
   }, []);
 
   const handleSend = useCallback(async () => {

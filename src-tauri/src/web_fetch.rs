@@ -4,6 +4,7 @@ pub async fn fetch_url(
     url: &str,
     format: &str,
     timeout_secs: u64,
+    app: &tauri::AppHandle,
 ) -> Result<String, AppError> {
     tracing::info!("[webfetch] Fetching URL: {} (format={}, timeout={}s)", url, format, timeout_secs);
 
@@ -26,12 +27,11 @@ pub async fn fetch_url(
             e
         })?;
 
-        // Still CF blocked after retry
+        // Still CF blocked after retry — fall back to WebView (Chrome TLS)
         if is_cf_blocked(output.status, &output.cf_headers, &output.bytes) {
-            tracing::warn!("[webfetch] Still CF blocked after retry for {}", url);
-            return Err(AppError::Http(
-                "Cloudflare anti-bot protection blocked the request".into(),
-            ));
+            tracing::info!("[webfetch] Still CF blocked, falling back to WebView fetch for {}", url);
+            let (bytes, ct) = crate::webview_bridge::fetch_via_webview(url, app).await?;
+            return process_bytes(bytes, &ct, format, url);
         }
     }
 
@@ -41,14 +41,23 @@ pub async fn fetch_url(
         return Err(AppError::Http(format!("HTTP {}: {}", output.status, text)));
     }
 
+    process_bytes(output.bytes, &output.content_type, format, url)
+}
+
+fn process_bytes(
+    bytes: Vec<u8>,
+    content_type: &str,
+    format: &str,
+    url: &str,
+) -> Result<String, AppError> {
     tracing::info!(
         "[webfetch] Received {} bytes from {} (content-type: {})",
-        output.bytes.len(),
+        bytes.len(),
         url,
-        output.content_type
+        content_type
     );
 
-    let text = String::from_utf8_lossy(&output.bytes).to_string();
+    let text = String::from_utf8_lossy(&bytes).to_string();
     let fmt = if format.is_empty() { "markdown" } else { format };
 
     match fmt {
@@ -56,12 +65,12 @@ pub async fn fetch_url(
             tracing::info!("[webfetch] Returning raw HTML, {} chars", text.len());
             Ok(text)
         }
-        "text" if output.content_type.contains("text/html") => {
+        "text" if content_type.contains("text/html") => {
             let plain = strip_html_tags(&text);
             tracing::info!("[webfetch] HTML stripped to plain text, {} chars", plain.len());
             Ok(plain)
         }
-        "markdown" if output.content_type.contains("text/html") => {
+        "markdown" if content_type.contains("text/html") => {
             let md = html2md::rewrite_html(&text, false);
             if !md.trim().is_empty() {
                 tracing::info!("[webfetch] HTML converted to markdown, {} chars", md.len());
@@ -85,7 +94,6 @@ pub async fn fetch_url(
     }
 }
 
-/// Captured Cloudflare-related header indicators
 struct CfHeaders {
     cf_mitigated: bool,
     has_cf_ray: bool,

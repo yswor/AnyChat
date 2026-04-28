@@ -3,6 +3,7 @@ mod commands;
 mod error;
 mod store;
 mod web_fetch;
+mod webview_bridge;
 
 use tauri_plugin_sql::{Migration, MigrationKind};
 
@@ -49,6 +50,7 @@ pub fn run() {
             commands::provider::encrypt_key,
             commands::provider::decrypt_key,
             commands::conversation::stream_chat,
+            webview_bridge::webfetch_result,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
