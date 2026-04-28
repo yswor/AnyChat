@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.0] - 2026-04-29
+
+### Added
+- 工具调用改为节点链展示：每轮思考过程 + 工具调用状态按时间线排列，不再相互覆盖
+- webfetch 工具节点显示目标 URL 列表
+
+### Changed
+- 用户消息复制/删除按钮移至消息卡片下方
+- 重构 chatStore：提取 `emptyStreamState()`、`tryParseJson`、`ApiMessage` 类型，删除 `toolStatus` 死代码
+
+### Fixed
+- 修复工具调用节点在获得最终答案后消失
+- 修复 `tool_calls` DB 存储格式不符合 API 标准导致多轮消息 400 错误
+- 修复 handleRegenerate 手动开 DB 连接泄漏
+
 ## [1.2.0] - 2026-04-28
 
 ### Added
