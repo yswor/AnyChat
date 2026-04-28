@@ -54,7 +54,7 @@ export interface Message {
   };
   provider_id?: string;
   tool_call_id?: string;
-  tool_calls?: ToolCallEvent[];
+  tool_calls?: ToolCallInfo[];
   toolNodes?: ToolCallNode[];
   created_at: string;
 }
@@ -90,6 +90,15 @@ export interface ToolCallNode {
   toolName: string;
   toolStatus: "executing" | "completed" | "failed";
   toolResult?: string;
+}
+
+export interface ToolCallInfo {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
 }
 
 export interface BalanceInfo {

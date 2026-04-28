@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Conversation, Message, StreamChunk, ToolCallEvent, ToolCallNode } from "../types";
+import type { Conversation, Message, StreamChunk, ToolCallInfo, ToolCallNode } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 import Database from "@tauri-apps/plugin-sql";
 import { DEFAULT_REASONING_EFFORT } from "../constants/defaults";
@@ -71,7 +71,7 @@ function emptyStreamState() {
   return { content: "", reasoning: "", isStreaming: false, error: null, toolCallNodes: [] as ToolCallNode[] };
 }
 
-type ApiMessage = { role: string; content: string; reasoning_content?: string; tool_calls?: ToolCallEvent[]; tool_call_id?: string };
+type ApiMessage = { role: string; content: string; reasoning_content?: string; tool_calls?: ToolCallInfo[]; tool_call_id?: string };
 
 function tryParseJson<T>(raw: unknown, fallback: T): T {
   if (!raw) return fallback;
@@ -525,9 +525,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 const now = new Date().toISOString();
                 const intermediateId = uuidv4();
                 await d.execute(
-                  `INSERT INTO messages (id, conversation_id, role, content, reasoning_content, tool_calls, provider_id, created_at)
-                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                  [intermediateId, currentConversationId, "assistant", snapshotContent, snapshotReasoning || null, JSON.stringify([tc]), conv.provider_id, now],
+                   `INSERT INTO messages (id, conversation_id, role, content, reasoning_content, tool_calls, provider_id, created_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                  [intermediateId, currentConversationId, "assistant", snapshotContent, snapshotReasoning || null, JSON.stringify([{ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.arguments } }]), conv.provider_id, now],
                 );
               } catch (insertErr) {
                 const errMsg = String(insertErr);
@@ -539,7 +539,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                   await d.execute(
                     `INSERT INTO messages (id, conversation_id, role, content, reasoning_content, tool_calls, provider_id, created_at)
                      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                    [intermediateId, currentConversationId, "assistant", snapshotContent, snapshotReasoning || null, JSON.stringify([tc]), conv.provider_id, now],
+                    [intermediateId, currentConversationId, "assistant", snapshotContent, snapshotReasoning || null, JSON.stringify([{ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.arguments } }]), conv.provider_id, now],
                   );
                 }
               }
