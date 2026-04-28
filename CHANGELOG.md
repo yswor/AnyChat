@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.1.0] - 2026-04-28
+
+### Added
+- 新增 webfetch 工具调用功能：LLM 可自主抓取指定 URL 的网页内容
+- 新增多格式输出支持（markdown / text / html），可配置 Accept 请求头
+- 新增 Cloudflare 多模式检测（5 种 header 特征 + 7 种 body 内容特征）
+- 新增 TLS 指纹升级：reqwest 从 rustls 切换为 native-tls-vendored（OpenSSL）
+- 新增 WebView fetch 回退机制：native TLS 被拦截时通过 Android WebView 抓取
+- 新增 tracing 日志覆盖 webfetch 全部生命周期
+
+### Changed
+- webfetch 大小限制从 2MB 提升至 5MB，增加 Content-Length 预检
+- webfetch 超时从固定 30s 改为可配置 1-120s
+- debug APK 包名添加 `.debug` 后缀，文件名添加 `-debug` 后缀，独立安装
+
+### Fixed
+- 修复 SSE 流式 tool_calls 浅层合并导致 function.name 丢失和 arguments 截断
+- 修复用户气泡中链接颜色与背景同色导致不可见
+
 ## [1.0.4] - 2026-04-28
 
 ### Fixed
