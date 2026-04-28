@@ -8,84 +8,47 @@ pub async fn fetch_url(
     tracing::info!("[webfetch] Fetching URL: {} (format={}, timeout={}s)", url, format, timeout_secs);
 
     let timeout = std::time::Duration::from_secs(timeout_secs.clamp(1, 120));
+    let max_size = 5 * 1024 * 1024; // 5MB
 
     let client = reqwest::Client::builder()
         .timeout(timeout)
         .build()
         .map_err(|e| AppError::Http(format!("Failed to create HTTP client: {}", e)))?;
 
-    let resp = do_fetch(&client, url, false).await?;
+    // Attempt 1: browser UA
+    let mut output = fetch_and_read(&client, url, false, max_size).await?;
 
-    // CloudFlare bot detection — retry with honest UA
-    let resp = if is_cf_blocked(&resp) {
-        tracing::info!("[webfetch] CloudFlare blocked, retrying with honest UA for {}", url);
-        do_fetch(&client, url, true).await?
-    } else {
-        resp
-    };
+    // Cloudflare blocked — retry with honest UA
+    if is_cf_blocked(output.status, &output.cf_headers, &output.bytes) {
+        tracing::info!("[webfetch] Cloudflare blocked, retrying with honest UA for {}", url);
+        output = fetch_and_read(&client, url, true, max_size).await.map_err(|e| {
+            tracing::warn!("[webfetch] Retry failed for {}: {}", url, e);
+            e
+        })?;
 
-    if !resp.status().is_success() {
-        let status = resp.status().as_u16();
-        let text = resp.text().await.unwrap_or_default();
-        tracing::warn!("[webfetch] HTTP {} for {}", status, url);
-        return Err(AppError::Http(format!("HTTP {}: {}", status, text)));
-    }
-
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_string();
-
-    // Pre-check Content-Length header to reject oversized responses early
-    let max_size = 5 * 1024 * 1024; // 5MB
-    if let Some(len_str) = resp.headers().get("content-length") {
-        if let Ok(len) = len_str.to_str().unwrap_or("0").parse::<usize>() {
-            if len > max_size {
-                tracing::warn!(
-                    "[webfetch] Content-Length {} exceeds limit for {} (max {})",
-                    len, url, max_size
-                );
-                return Err(AppError::Http(format!(
-                    "Response too large ({} bytes, max {} bytes)",
-                    len, max_size
-                )));
-            }
+        // Still CF blocked after retry
+        if is_cf_blocked(output.status, &output.cf_headers, &output.bytes) {
+            tracing::warn!("[webfetch] Still CF blocked after retry for {}", url);
+            return Err(AppError::Http(
+                "Cloudflare anti-bot protection blocked the request".into(),
+            ));
         }
     }
 
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| {
-            tracing::warn!("[webfetch] Failed to read response body for {}: {}", url, e);
-            AppError::Http(format!("Failed to read response: {}", e))
-        })?;
-
-    if bytes.len() > max_size {
-        tracing::warn!(
-            "[webfetch] Response too large for {}: {} bytes (max {})",
-            url,
-            bytes.len(),
-            max_size
-        );
-        return Err(AppError::Http(format!(
-            "Response too large ({} bytes, max {} bytes)",
-            bytes.len(),
-            max_size
-        )));
+    if output.status >= 400 {
+        let text = String::from_utf8_lossy(&output.bytes);
+        tracing::warn!("[webfetch] HTTP {} for {}", output.status, url);
+        return Err(AppError::Http(format!("HTTP {}: {}", output.status, text)));
     }
-
-    let text = String::from_utf8_lossy(&bytes).to_string();
 
     tracing::info!(
         "[webfetch] Received {} bytes from {} (content-type: {})",
-        bytes.len(),
+        output.bytes.len(),
         url,
-        content_type
+        output.content_type
     );
 
+    let text = String::from_utf8_lossy(&output.bytes).to_string();
     let fmt = if format.is_empty() { "markdown" } else { format };
 
     match fmt {
@@ -93,12 +56,12 @@ pub async fn fetch_url(
             tracing::info!("[webfetch] Returning raw HTML, {} chars", text.len());
             Ok(text)
         }
-        "text" if content_type.contains("text/html") => {
+        "text" if output.content_type.contains("text/html") => {
             let plain = strip_html_tags(&text);
             tracing::info!("[webfetch] HTML stripped to plain text, {} chars", plain.len());
             Ok(plain)
         }
-        "markdown" if content_type.contains("text/html") => {
+        "markdown" if output.content_type.contains("text/html") => {
             let md = html2md::rewrite_html(&text, false);
             if !md.trim().is_empty() {
                 tracing::info!("[webfetch] HTML converted to markdown, {} chars", md.len());
@@ -120,6 +83,89 @@ pub async fn fetch_url(
             Ok(text)
         }
     }
+}
+
+/// Captured Cloudflare-related header indicators
+struct CfHeaders {
+    cf_mitigated: bool,
+    has_cf_ray: bool,
+    server_is_cloudflare: bool,
+}
+
+/// Result of a single HTTP fetch with full body
+struct FetchOutput {
+    status: u16,
+    cf_headers: CfHeaders,
+    content_type: String,
+    bytes: Vec<u8>,
+}
+
+/// Executes a single HTTP GET, reads headers + full body (with size checks)
+async fn fetch_and_read(
+    client: &reqwest::Client,
+    url: &str,
+    honest_ua: bool,
+    max_size: usize,
+) -> Result<FetchOutput, AppError> {
+    let resp = do_fetch(client, url, honest_ua).await?;
+    let status = resp.status().as_u16();
+
+    let cf_headers = CfHeaders {
+        cf_mitigated: resp
+            .headers()
+            .get("cf-mitigated")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v == "challenge")
+            .unwrap_or(false),
+        has_cf_ray: resp.headers().contains_key("cf-ray"),
+        server_is_cloudflare: resp
+            .headers()
+            .get("server")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.to_lowercase().contains("cloudflare"))
+            .unwrap_or(false),
+    };
+
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    // Pre-check Content-Length to reject oversized responses early
+    if let Some(len_str) = resp.headers().get("content-length") {
+        if let Ok(len) = len_str.to_str().unwrap_or("0").parse::<usize>() {
+            if len > max_size {
+                tracing::warn!(
+                    "[webfetch] Content-Length {} exceeds limit for {} (max {})",
+                    len, url, max_size
+                );
+                return Err(AppError::Http(format!(
+                    "Response too large ({} bytes, max {} bytes)",
+                    len, max_size
+                )));
+            }
+        }
+    }
+
+    let bytes = resp.bytes().await.map_err(|e| {
+        tracing::warn!("[webfetch] Failed to read response body for {}: {}", url, e);
+        AppError::Http(format!("Failed to read response: {}", e))
+    })?.to_vec();
+
+    if bytes.len() > max_size {
+        tracing::warn!(
+            "[webfetch] Response too large for {}: {} bytes (max {})",
+            url, bytes.len(), max_size
+        );
+        return Err(AppError::Http(format!(
+            "Response too large ({} bytes, max {} bytes)",
+            bytes.len(), max_size
+        )));
+    }
+
+    Ok(FetchOutput { status, cf_headers, content_type, bytes })
 }
 
 async fn do_fetch(
@@ -145,14 +191,30 @@ async fn do_fetch(
         })
 }
 
-fn is_cf_blocked(resp: &reqwest::Response) -> bool {
-    resp.status().as_u16() == 403
-        && resp
-            .headers()
-            .get("cf-mitigated")
-            .and_then(|v| v.to_str().ok())
-            .map(|v| v == "challenge")
-            .unwrap_or(false)
+/// Detect Cloudflare anti-bot pages via headers OR body content
+fn is_cf_blocked(status: u16, cf: &CfHeaders, bytes: &[u8]) -> bool {
+    if status != 403 && status != 503 {
+        return false;
+    }
+
+    // Header-based detection (cheap, check first)
+    if cf.cf_mitigated || cf.has_cf_ray || cf.server_is_cloudflare {
+        return true;
+    }
+
+    // Body-based detection (more expensive, only fall through if headers are ambiguous)
+    let body = String::from_utf8_lossy(bytes);
+    let lower = body.to_lowercase();
+
+    // Cloudflare challenge page markers
+    lower.contains("_cf_chl_opt")
+        || lower.contains("cf-browser-verify")
+        || lower.contains("challenge-platform")
+        || lower.contains("cf-captcha")
+        || (lower.contains("just a moment") && lower.contains("cloudflare"))
+        || (lower.contains("checking your browser") && lower.contains("cloudflare"))
+        || (lower.contains("cloudflare") && lower.contains("attention required"))
+        || lower.contains("cf-chl-bypass")
 }
 
 fn strip_html_tags(html: &str) -> String {
