@@ -181,6 +181,22 @@ fn build_body(
                     "required": []
                 }
             }
+        }, {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "获取指定城市的实时天气信息，包括温度、天气状况、风速",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "location": {
+                            "type": "string",
+                            "description": "城市名称，如 杭州、Beijing、Tokyo"
+                        }
+                    },
+                    "required": ["location"]
+                }
+            }
         }]),
     );
 
@@ -539,6 +555,65 @@ async fn execute_tool(name: &str, args: &serde_json::Value, app: &tauri::AppHand
                 weekday,
             )
         }
+        "get_weather" => {
+            let location = args["location"].as_str().unwrap_or("");
+            if location.is_empty() {
+                return "错误: 未提供城市名称".to_string();
+            }
+            let client = reqwest::Client::new();
+
+            let geo_url = format!(
+                "https://geocoding-api.open-meteo.com/v1/search?name={}&count=1&language=zh",
+                location
+            );
+            let geo_json: serde_json::Value = match client.get(&geo_url).send().await {
+                Ok(r) => match r.json().await {
+                    Ok(j) => j,
+                    Err(e) => return format!("解析城市数据失败: {}", e),
+                },
+                Err(e) => return format!("查询城市失败: {}", e),
+            };
+            let results = geo_json["results"].as_array();
+            if results.is_none_or(|r| r.is_empty()) {
+                return format!("未找到城市: {}", location);
+            }
+            let first = &results.unwrap()[0];
+            let lat = first["latitude"].as_f64().unwrap_or(0.0);
+            let lon = first["longitude"].as_f64().unwrap_or(0.0);
+            let city = first["name"].as_str().unwrap_or(location);
+            let country = first["country"].as_str().unwrap_or("");
+
+            let weather_url = format!(
+                "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}&current_weather=true",
+                lat, lon
+            );
+            let w_json: serde_json::Value = match client.get(&weather_url).send().await {
+                Ok(r) => match r.json().await {
+                    Ok(j) => j,
+                    Err(e) => return format!("解析天气数据失败: {}", e),
+                },
+                Err(e) => return format!("查询天气失败: {}", e),
+            };
+            let cw = &w_json["current_weather"];
+            let temp = cw["temperature"].as_f64().unwrap_or(0.0);
+            let wind = cw["windspeed"].as_f64().unwrap_or(0.0);
+            let code = cw["weathercode"].as_u64().unwrap_or(0);
+            let condition = match code {
+                0 => "晴天",
+                1..=3 => "多云",
+                45 | 48 => "雾",
+                51 | 53 | 55 => "小雨",
+                61 | 63 | 65 => "中雨",
+                71 | 73 | 75 => "雪",
+                80..=82 => "阵雨",
+                95 | 96 | 99 => "雷暴",
+                _ => "未知",
+            };
+            format!(
+                "{} ({}) 当前天气: {}，温度 {:.1}°C，风速 {:.1} km/h",
+                city, country, condition, temp, wind
+            )
+        }
         _ => {
             tracing::warn!("[tool] Unknown tool requested: {}", name);
             format!("不支持的工具: {}", name)
@@ -696,6 +771,14 @@ pub async fn stream_chat_request(
                         }
                     } else {
                         format!("正在获取 {} 个网页内容", count)
+                    }
+                }
+                "get_weather" => {
+                    let loc = args["location"].as_str().unwrap_or("");
+                    if loc.is_empty() {
+                        "正在查询天气".to_string()
+                    } else {
+                        format!("正在查询天气: {}", loc)
                     }
                 }
                 _ => format!("正在执行: {}", func_name),
