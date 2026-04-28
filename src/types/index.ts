@@ -91,6 +91,7 @@ export interface ToolCallNode {
   arguments?: string;
   toolStatus: "executing" | "completed" | "failed";
   toolResult?: string;
+  mode?: "thinking" | "non-thinking";
 }
 
 export interface ToolCallInfo {

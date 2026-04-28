@@ -556,6 +556,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     toolName: tc.name,
                     arguments: tc.arguments,
                     toolStatus: "executing",
+                    mode: snapshotReasoning ? "thinking" : "non-thinking",
                   }],
                 },
               };

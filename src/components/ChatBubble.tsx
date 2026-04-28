@@ -92,7 +92,7 @@ export function ChatBubble({
             {toolNodes.map((node, i) => (
               <div key={i} className="chat-bubble__tool-node">
                 {node.reasoning && (
-                  <div className="chat-bubble__tool-node-reasoning">
+                  <div className={node.mode === "non-thinking" ? "chat-bubble__tool-node-plain" : "chat-bubble__tool-node-reasoning"}>
                     <MarkdownRenderer content={node.reasoning} />
                   </div>
                 )}

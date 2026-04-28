@@ -519,12 +519,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
+  padding: 2px 0;
   color: var(--text-secondary);
-  animation: fadeIn 0.2s ease;
 }
 
 .chat-bubble__tool-node-status--executing .chat-bubble__tool-node-icon {
@@ -533,12 +529,17 @@
 
 .chat-bubble__tool-node-status--completed {
   color: var(--accent);
-  border-color: var(--accent);
 }
 
 .chat-bubble__tool-node-status--failed {
   color: #e74c3c;
-  border-color: #e74c3c;
+}
+
+.chat-bubble__tool-node-plain {
+  padding: 4px 0;
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 
 .chat-bubble__tool-node-url {
