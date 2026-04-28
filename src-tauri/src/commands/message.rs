@@ -124,7 +124,7 @@ fn build_body(
                         "urls": {
                             "type": "array",
                             "items": { "type": "string" },
-                            "description": "要获取内容的 URL 列表（最多 3 个），每个必须是完整的 http:// 或 https:// 链接"
+                            "description": "要获取内容的 URL 列表（最多 5 个），每个必须是完整的 http:// 或 https:// 链接"
                         },
                         "format": {
                             "type": "string",
@@ -435,7 +435,7 @@ async fn execute_tool(name: &str, args: &serde_json::Value, app: &tauri::AppHand
     match name {
         "webfetch" => {
             let urls: Vec<&str> = if let Some(arr) = args["urls"].as_array() {
-                arr.iter().take(3).filter_map(|v| v.as_str()).collect()
+                arr.iter().take(5).filter_map(|v| v.as_str()).collect()
             } else if let Some(u) = args["url"].as_str() {
                 vec![u]
             } else {
@@ -626,7 +626,7 @@ pub async fn stream_chat_request(
 
             let status_msg = match func_name {
                 "webfetch" => {
-                    let count = args["urls"].as_array().map(|a| a.len().min(3)).unwrap_or(0);
+                    let count = args["urls"].as_array().map(|a| a.len().min(5)).unwrap_or(0);
                     if count == 0 {
                         if let Some(u) = args["url"].as_str() {
                             format!("正在获取网页内容: {}", u)

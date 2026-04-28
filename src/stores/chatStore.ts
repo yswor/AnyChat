@@ -544,17 +544,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 }
               }
             })();
-            set((s) => ({
-              streamState: {
-                ...s.streamState,
-                toolCallNodes: [...s.streamState.toolCallNodes, {
-                  reasoning: snapshotReasoning,
-                  toolName: tc.name,
-                  arguments: tc.arguments,
-                  toolStatus: "executing",
-                }],
-              },
-            }));
+            set((s) => {
+              const nodeText = snapshotReasoning || snapshotContent;
+              const prevLen = s.streamState.toolCallNodes.reduce((sum, n) => sum + n.reasoning.length, 0);
+              const nodeReasoning = prevLen > 0 ? nodeText.slice(prevLen) : nodeText;
+              return {
+                streamState: {
+                  ...s.streamState,
+                  toolCallNodes: [...s.streamState.toolCallNodes, {
+                    reasoning: nodeReasoning,
+                    toolName: tc.name,
+                    arguments: tc.arguments,
+                    toolStatus: "executing",
+                  }],
+                },
+              };
+            });
           } else {
             // Save tool result message to DB
             (async () => {

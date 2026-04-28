@@ -7,7 +7,7 @@ function extractToolUrls(node: ToolCallNode): string[] {
   try {
     const parsed = JSON.parse(node.arguments);
     const urls: string[] = parsed.urls || (parsed.url ? [parsed.url] : []);
-    return urls.slice(0, 3);
+    return urls.slice(0, 5);
   } catch { return []; }
 }
 
@@ -48,6 +48,7 @@ export function ChatBubble({
   const reasoning = isStreaming && isAssistant ? (streamReasoning || message.reasoning_content) : message.reasoning_content;
   const showReasoning = Boolean(reasoning);
   const toolNodes = toolCallNodes ?? message.toolNodes;
+  const showReasoningBlock = showReasoning && !(toolNodes && toolNodes.length > 0);
 
   const isReaderMsg = isReaderMode && isAssistant;
   const showPreview = isReaderMsg && content.length > 120;
@@ -65,7 +66,7 @@ export function ChatBubble({
   return (
     <div className={`chat-bubble ${isUser ? "chat-bubble--user" : "chat-bubble--assistant"}`}>
       <div className="chat-bubble__body">
-        {showReasoning && (
+        {showReasoningBlock && (
           <div className="chat-bubble__reasoning">
             <div
               className="chat-bubble__reasoning-summary"
