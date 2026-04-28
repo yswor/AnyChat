@@ -142,6 +142,48 @@ fn build_body(
         }]),
     );
 
+    body.insert(
+        "tools".to_string(),
+        serde_json::json!([{
+            "type": "function",
+            "function": {
+                "name": "webfetch",
+                "description": "获取指定 URL 的网页内容，支持多种输出格式",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "urls": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "要获取内容的 URL 列表（最多 5 个），每个必须是完整的 http:// 或 https:// 链接"
+                        },
+                        "format": {
+                            "type": "string",
+                            "enum": ["markdown", "text", "html"],
+                            "description": "返回内容的格式。markdown（默认，HTML自动转为Markdown）、text（纯文本，剥离HTML标签）、html（原始HTML）"
+                        },
+                        "timeout": {
+                            "type": "number",
+                            "description": "请求超时时间（秒），默认30秒，最大120秒"
+                        }
+                    },
+                    "required": ["urls"]
+                }
+            }
+        }, {
+            "type": "function",
+            "function": {
+                "name": "get_current_time",
+                "description": "获取当前的精确日期、时间和星期信息",
+                "parameters": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            }
+        }]),
+    );
+
     if params.max_tokens > 0 {
         body.insert(
             "max_tokens".to_string(),
@@ -477,6 +519,25 @@ async fn execute_tool(name: &str, args: &serde_json::Value, app: &tauri::AppHand
             } else {
                 combined
             }
+        }
+        "get_current_time" => {
+            let now = chrono::Local::now();
+            let weekday = match now.format("%u").to_string().parse::<usize>() {
+                Ok(d) if d < 7 => ["一", "二", "三", "四", "五", "六", "日"][d - 1],
+                _ => "?",
+            };
+            let tz = now.format("%Z").to_string();
+            format!(
+                "当前时间: {}年{}月{}日 {}:{:02}:{:02} ({}，星期{})",
+                now.format("%Y"),
+                now.format("%m"),
+                now.format("%d"),
+                now.format("%H"),
+                now.format("%M").to_string().parse::<u32>().unwrap_or(0),
+                now.format("%S").to_string().parse::<u32>().unwrap_or(0),
+                if tz.is_empty() { "本地时区" } else { &tz },
+                weekday,
+            )
         }
         _ => {
             tracing::warn!("[tool] Unknown tool requested: {}", name);
