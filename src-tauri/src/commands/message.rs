@@ -102,13 +102,22 @@ fn build_body(params: &StreamChatParams, messages: &[ChatMessage]) -> HashMap<St
             "type": "function",
             "function": {
                 "name": "webfetch",
-                "description": "获取指定 URL 的网页内容",
+                "description": "获取指定 URL 的网页内容，支持多种输出格式",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "url": {
                             "type": "string",
-                            "description": "要获取内容的 URL"
+                            "description": "要获取内容的 URL，必须是完整的 http:// 或 https:// 链接"
+                        },
+                        "format": {
+                            "type": "string",
+                            "enum": ["markdown", "text", "html"],
+                            "description": "返回内容的格式。markdown（默认，HTML自动转为Markdown）、text（纯文本，剥离HTML标签）、html（原始HTML）"
+                        },
+                        "timeout": {
+                            "type": "number",
+                            "description": "请求超时时间（秒），默认30秒，最大120秒"
                         }
                     },
                     "required": ["url"]
@@ -379,8 +388,10 @@ async fn execute_tool(name: &str, args: &serde_json::Value) -> String {
                 tracing::warn!("[tool] webfetch called with empty URL");
                 return "错误: 未提供 URL".to_string();
             }
-            tracing::info!("[tool] Executing webfetch for {}", url);
-            match web_fetch::fetch_url(url, "").await {
+            let format = args["format"].as_str().unwrap_or("markdown");
+            let timeout = args["timeout"].as_u64().unwrap_or(30);
+            tracing::info!("[tool] Executing webfetch for {} (format={}, timeout={}s)", url, format, timeout);
+            match web_fetch::fetch_url(url, format, timeout).await {
                 Ok(content) => {
                     tracing::info!(
                         "[tool] webfetch succeeded for {}: {} chars",
