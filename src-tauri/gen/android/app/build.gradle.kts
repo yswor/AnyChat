@@ -67,7 +67,8 @@ android {
         outputs
             .map { it as com.android.build.gradle.internal.api.BaseVariantOutputImpl }
             .forEach { output ->
-                output.outputFileName = "AnyChat-v${variant.versionName}.apk"
+                val suffix = if (variant.buildType.name == "debug") "-debug" else ""
+                output.outputFileName = "AnyChat-v${variant.versionName}${suffix}.apk"
             }
     }
 }
