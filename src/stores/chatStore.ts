@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Conversation, Message, StreamChunk } from "../types";
+import type { Conversation, Message, StreamChunk, ToolCallEvent, ToolCallNode } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 import Database from "@tauri-apps/plugin-sql";
 import { DEFAULT_REASONING_EFFORT } from "../constants/defaults";
@@ -15,6 +15,7 @@ interface ChatState {
     isStreaming: boolean;
     error: string | null;
     toolStatus: string | null;
+    toolCallNodes: ToolCallNode[];
   };
   loading: boolean;
 
@@ -63,7 +64,7 @@ function resetActiveStream() {
   activeUnlisten?.();
   activeUnlisten = null;
   useChatStore.setState({
-    streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null },
+    streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null, toolCallNodes: [] },
   });
 }
 
@@ -117,6 +118,16 @@ function normalizeMessage(row: any): Message {
       usageDetails = undefined;
     }
   }
+  let toolCalls: Message["tool_calls"];
+  if (row.tool_calls) {
+    try {
+      toolCalls = typeof row.tool_calls === "string"
+        ? JSON.parse(row.tool_calls)
+        : row.tool_calls;
+    } catch {
+      toolCalls = undefined;
+    }
+  }
   return {
     id: row.id,
     conversation_id: row.conversation_id,
@@ -129,6 +140,7 @@ function normalizeMessage(row: any): Message {
     usage_details: usageDetails,
     provider_id: row.provider_id || undefined,
     tool_call_id: row.tool_call_id || undefined,
+    tool_calls: toolCalls,
     created_at: row.created_at,
   };
 }
@@ -137,7 +149,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   conversations: [],
   currentConversationId: null,
   messages: [],
-  streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null },
+  streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null, toolCallNodes: [] },
   loading: false,
 
   loadConversations: async () => {
@@ -431,18 +443,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       );
 
       newMessages = [...messages, userMsg];
-      set({ messages: newMessages, streamState: { content: "", reasoning: "", isStreaming: true, error: null, toolStatus: null } });
+      set({ messages: newMessages, streamState: { content: "", reasoning: "", isStreaming: true, error: null, toolStatus: null, toolCallNodes: [] } });
     } else {
-      set({ streamState: { content: "", reasoning: "", isStreaming: true, error: null, toolStatus: null } });
+      set({ streamState: { content: "", reasoning: "", isStreaming: true, error: null, toolStatus: null, toolCallNodes: [] } });
     }
 
     // Build API messages — use original `content` for the user message with displayContent
-    const apiMessages: { role: string; content: string; reasoning_content?: string }[] = [];
+    const apiMessages: { role: string; content: string; reasoning_content?: string; tool_calls?: ToolCallEvent[]; tool_call_id?: string }[] = [];
     if (conv.system_prompt) {
       apiMessages.push({ role: "system", content: conv.system_prompt });
     }
     for (const msg of newMessages) {
-      const m: { role: string; content: string; reasoning_content?: string } = {
+      const m: { role: string; content: string; reasoning_content?: string; tool_calls?: ToolCallEvent[]; tool_call_id?: string } = {
         role: msg.role,
         content: (displayContent != null && msg.id === displayUserMsgId)
           ? content
@@ -450,6 +462,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
       if (msg.reasoning_content) {
         m.reasoning_content = msg.reasoning_content;
+      }
+      if (msg.tool_calls) {
+        m.tool_calls = msg.tool_calls;
+      }
+      if (msg.tool_call_id) {
+        m.tool_call_id = msg.tool_call_id;
       }
       apiMessages.push(m);
     }
@@ -496,6 +514,77 @@ export const useChatStore = create<ChatState>((set, get) => ({
           return;
         }
         const chunk = event.payload;
+
+        // Handle tool call events (DB persistence + content reset)
+        if (chunk.tool_call) {
+          const tc = chunk.tool_call;
+          const s = get();
+          if (tc.status === "executing") {
+            const snapshotContent = s.streamState.content;
+            const snapshotReasoning = s.streamState.reasoning;
+            // Save intermediate assistant(tool_calls) message to DB
+            (async () => {
+              try {
+                const d = await getDb();
+                const now = new Date().toISOString();
+                const intermediateId = uuidv4();
+                await d.execute(
+                  `INSERT INTO messages (id, conversation_id, role, content, reasoning_content, tool_calls, provider_id, created_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                  [intermediateId, currentConversationId, "assistant", snapshotContent, snapshotReasoning || null, JSON.stringify([tc]), conv.provider_id, now],
+                );
+              } catch (insertErr) {
+                const errMsg = String(insertErr);
+                if (errMsg.includes("no column named tool_calls")) {
+                  const d = await getDb();
+                  try { await d.execute("ALTER TABLE messages ADD COLUMN tool_calls TEXT"); } catch { /* ok */ }
+                  const now = new Date().toISOString();
+                  const intermediateId = uuidv4();
+                  await d.execute(
+                    `INSERT INTO messages (id, conversation_id, role, content, reasoning_content, tool_calls, provider_id, created_at)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                    [intermediateId, currentConversationId, "assistant", snapshotContent, snapshotReasoning || null, JSON.stringify([tc]), conv.provider_id, now],
+                  );
+                }
+              }
+            })();
+            set((s) => ({
+              streamState: {
+                ...s.streamState,
+                toolCallNodes: [...s.streamState.toolCallNodes, {
+                  reasoning: snapshotReasoning,
+                  toolName: tc.name,
+                  toolStatus: "executing",
+                }],
+              },
+            }));
+          } else {
+            // Save tool result message to DB
+            (async () => {
+              try {
+                const d = await getDb();
+                const now = new Date().toISOString();
+                const resultId = uuidv4();
+                await d.execute(
+                  `INSERT INTO messages (id, conversation_id, role, content, tool_call_id, provider_id, created_at)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+                  [resultId, currentConversationId, "tool", tc.result || "", tc.id, conv.provider_id, now],
+                );
+              } catch { /* ignore — tool result is supplementary */ }
+            })();
+            set((s) => ({
+              streamState: {
+                ...s.streamState,
+                toolCallNodes: s.streamState.toolCallNodes.map((node, i) =>
+                  i === s.streamState.toolCallNodes.length - 1
+                    ? { ...node, toolStatus: tc.status, toolResult: tc.result }
+                    : node
+                ),
+              },
+            }));
+          }
+        }
+
         if (chunk.done && !chunk.error) {
           if (chunk.usage_prompt || chunk.usage_completion || chunk.usage_cached) {
             usageRef.current = {
@@ -515,9 +604,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
               error: chunk.error,
             },
           }));
-        } else if (chunk.tool_status) {
+        } else if (chunk.tool_status !== undefined) {
           set((s) => ({
-            streamState: { ...s.streamState, toolStatus: chunk.tool_status ?? null },
+            streamState: { ...s.streamState, toolStatus: chunk.tool_status || null },
           }));
         } else {
           set((s) => {
@@ -599,7 +688,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       activeUnlisten = null;
 
       set((s) => ({
-        streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null },
+        streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null, toolCallNodes: [] },
         messages: s.messages.map((m) =>
           m.id === assistantMsgId
             ? { ...m, content: finalContent, reasoning_content: finalReasoning || undefined, tokens: totalTokens, usage_details: usageDetails }
@@ -628,7 +717,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   resetStream: () => {
     set({
-      streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null },
+      streamState: { content: "", reasoning: "", isStreaming: false, error: null, toolStatus: null, toolCallNodes: [] },
     });
   },
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
-import type { Message } from "../types";
+import type { Message, ToolCallNode } from "../types";
 
 interface ChatBubbleProps {
   message: Message;
@@ -13,6 +13,7 @@ interface ChatBubbleProps {
   onDelete?: (messageIndex: number) => void;
   isReaderMode?: boolean;
   onOpenReader?: (message: Message) => void;
+  toolCallNodes?: ToolCallNode[];
 }
 
 export function ChatBubble({
@@ -26,6 +27,7 @@ export function ChatBubble({
   onDelete,
   isReaderMode = false,
   onOpenReader,
+  toolCallNodes,
 }: ChatBubbleProps) {
   const [reasoningExpanded, setReasoningExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -47,6 +49,8 @@ export function ChatBubble({
   }, [isStreaming, showReasoning]);
 
   if (message.role === "system") return null;
+  if (message.role === "tool") return null;
+  if (message.role === "assistant" && message.tool_calls && message.tool_calls.length > 0) return null;
 
   return (
     <div className={`chat-bubble ${isUser ? "chat-bubble--user" : "chat-bubble--assistant"}`}>
@@ -70,6 +74,27 @@ export function ChatBubble({
                 <MarkdownRenderer content={reasoning || ""} />
               </div>
             )}
+          </div>
+            )}
+        {toolCallNodes && toolCallNodes.length > 0 && (
+          <div className="chat-bubble__tool-calls">
+            {toolCallNodes.map((node, i) => (
+              <div key={i} className="chat-bubble__tool-node">
+                {node.reasoning && (
+                  <div className="chat-bubble__tool-node-reasoning">
+                    <MarkdownRenderer content={node.reasoning} />
+                  </div>
+                )}
+                <div className={`chat-bubble__tool-node-status chat-bubble__tool-node-status--${node.toolStatus}`}>
+                  <span className="chat-bubble__tool-node-icon">
+                    {node.toolStatus === "executing" ? "◌" : node.toolStatus === "completed" ? "✓" : "✕"}
+                  </span>
+                  <span>调用工具: {node.toolName}</span>
+                  {node.toolStatus === "completed" && <span>· 完成</span>}
+                  {node.toolStatus === "failed" && <span>· 失败</span>}
+                </div>
+              </div>
+            ))}
           </div>
         )}
         {isReaderMsg && isStreaming && !content && !reasoning && (
@@ -106,9 +131,9 @@ export function ChatBubble({
             )}
           </div>
         )}
-        {isAssistant && !isStreaming && (
+        {!isStreaming && (
           <div className="chat-bubble__actions">
-            {isLastBubble && (
+            {isAssistant && isLastBubble && (
               <button
                 className="btn-icon btn-icon--sm"
                 onClick={() => onRegenerate(messageIndex)}
@@ -152,7 +177,7 @@ export function ChatBubble({
                 </svg>
               </button>
             )}
-            {message.usage_details && (
+            {isAssistant && message.usage_details && (
               <span className="chat-bubble__token-text">
                 输入 {message.usage_details.prompt.toLocaleString()} · 输出 {message.usage_details.completion.toLocaleString()}
                 {message.usage_details.cached > 0 && <> · 缓存命中 {message.usage_details.cached.toLocaleString()}</>}

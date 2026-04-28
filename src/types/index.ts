@@ -54,6 +54,7 @@ export interface Message {
   };
   provider_id?: string;
   tool_call_id?: string;
+  tool_calls?: ToolCallEvent[];
   created_at: string;
 }
 
@@ -72,6 +73,22 @@ export interface StreamChunk {
   usage_completion?: number;
   usage_cached?: number;
   tool_status?: string;
+  tool_call?: ToolCallEvent;
+}
+
+export interface ToolCallEvent {
+  id: string;
+  name: string;
+  arguments: string;
+  status: "executing" | "completed" | "failed";
+  result?: string;
+}
+
+export interface ToolCallNode {
+  reasoning: string;
+  toolName: string;
+  toolStatus: "executing" | "completed" | "failed";
+  toolResult?: string;
 }
 
 export interface BalanceInfo {

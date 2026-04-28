@@ -29,8 +29,10 @@ export function ChatPage() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isAtBottom, setIsAtBottom] = useState(true);
   const [showScrollFab, setShowScrollFab] = useState(false);
+  const isAtBottomRef = useRef(true);
+  const isManualScrollingRef = useRef(false);
+  const readerScrollTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const {
     conversations,
@@ -67,23 +69,28 @@ export function ChatPage() {
   }, [id]);
 
   useEffect(() => {
-    if (isAtBottom) {
+    if (isAtBottomRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, streamState.content, isAtBottom]);
+  }, [messages.length, streamState.content]);
 
   const handleMessagesScroll = useCallback(() => {
+    if (isManualScrollingRef.current) return;
     const el = messagesContainerRef.current;
     if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
-    setIsAtBottom(atBottom);
+    const threshold = Math.max(50, el.clientHeight * 0.1);
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+    isAtBottomRef.current = atBottom;
     setShowScrollFab(!atBottom);
   }, []);
 
   const scrollToBottom = useCallback(() => {
+    isManualScrollingRef.current = true;
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    setIsAtBottom(true);
     setShowScrollFab(false);
+    setTimeout(() => {
+      isManualScrollingRef.current = false;
+    }, 500);
   }, []);
 
   useEffect(() => {
@@ -96,6 +103,14 @@ export function ChatPage() {
     };
     window.addEventListener("shared-text", handleSharedText);
     return () => window.removeEventListener("shared-text", handleSharedText);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (readerScrollTimerRef.current) {
+        clearTimeout(readerScrollTimerRef.current);
+      }
+    };
   }, []);
 
   // WebView-based fetch fallback for Cloudflare-protected URLs
@@ -118,7 +133,7 @@ export function ChatPage() {
           content_type: contentType,
           body_base64: bodyBase64,
         });
-      } catch (err) {
+      } catch {
         await invoke("webfetch_result", {
           id,
           status: 0,
@@ -199,8 +214,10 @@ export function ChatPage() {
     if (id) {
       localStorage.setItem(`readerMode_${id}`, String(next));
     }
-    // Scroll to bottom after layout change
-    setTimeout(() => {
+    if (readerScrollTimerRef.current) {
+      clearTimeout(readerScrollTimerRef.current);
+    }
+    readerScrollTimerRef.current = setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 100);
   }, [readerMode, id]);
@@ -312,21 +329,18 @@ export function ChatPage() {
               streamReasoning={
                 streamState.isStreaming ? streamState.reasoning : undefined
               }
+              toolCallNodes={
+                (streamState.isStreaming || isStreamingLocal) &&
+                idx === messages.length - 1 &&
+                msg.role === "assistant"
+                  ? streamState.toolCallNodes
+                  : undefined
+              }
               isReaderMode={readerMode}
               onOpenReader={handleOpenReader}
               onDelete={handleDelete}
             />
           ))}
-        {streamState.toolStatus && (
-          <div className="chat-page__tool-status">
-            {streamState.toolStatus}
-          </div>
-        )}
-        {streamState.error && (
-          <div className="chat-page__error">
-            错误: {streamState.error}
-          </div>
-        )}
         <div ref={messagesEndRef} />
         {showScrollFab && (
           <div className="chat-page__scroll-fab-wrap">
