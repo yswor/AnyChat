@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{Mutex, LazyLock};
+use std::sync::{LazyLock, Mutex};
 use tauri::Emitter;
 use tokio::sync::oneshot;
 
@@ -25,12 +25,18 @@ pub async fn fetch_via_webview(
 
     PENDING.lock().unwrap().insert(id.clone(), tx);
 
-    let _ = app.emit("webfetch-request", serde_json::json!({ "id": id, "url": url }));
+    let _ = app.emit(
+        "webfetch-request",
+        serde_json::json!({ "id": id, "url": url }),
+    );
 
     match tokio::time::timeout(std::time::Duration::from_secs(30), rx).await {
         Ok(Ok(result)) => {
             if result.status >= 400 {
-                let preview = String::from_utf8_lossy(&result.body).chars().take(500).collect::<String>();
+                let preview = String::from_utf8_lossy(&result.body)
+                    .chars()
+                    .take(500)
+                    .collect::<String>();
                 Err(crate::error::AppError::Http(format!(
                     "WebView fetch HTTP {}: {}",
                     result.status, preview
@@ -39,12 +45,14 @@ pub async fn fetch_via_webview(
                 Ok((result.body, result.content_type))
             }
         }
-        Ok(Err(_)) => {
-            Err(crate::error::AppError::Stream("WebView fetch channel closed".into()))
-        }
+        Ok(Err(_)) => Err(crate::error::AppError::Stream(
+            "WebView fetch channel closed".into(),
+        )),
         Err(_) => {
             PENDING.lock().unwrap().remove(&id);
-            Err(crate::error::AppError::Stream("WebView fetch timed out".into()))
+            Err(crate::error::AppError::Stream(
+                "WebView fetch timed out".into(),
+            ))
         }
     }
 }
@@ -57,11 +65,8 @@ pub fn webfetch_result(
     content_type: String,
     body_base64: String,
 ) -> Result<(), String> {
-    let body = base64::Engine::decode(
-        &base64::engine::general_purpose::STANDARD,
-        &body_base64,
-    )
-    .map_err(|e| format!("Base64 decode failed: {}", e))?;
+    let body = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &body_base64)
+        .map_err(|e| format!("Base64 decode failed: {}", e))?;
 
     let mut pending = PENDING.lock().unwrap();
     if let Some(tx) = pending.remove(&id) {

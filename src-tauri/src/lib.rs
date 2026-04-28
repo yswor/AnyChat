@@ -36,6 +36,12 @@ pub fn run() {
             sql: include_str!("../migrations/004_add_tool_call_id.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 5,
+            description: "add tool_calls to messages",
+            sql: include_str!("../migrations/005_add_tool_calls.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

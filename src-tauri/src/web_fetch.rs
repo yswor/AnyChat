@@ -6,7 +6,12 @@ pub async fn fetch_url(
     timeout_secs: u64,
     app: &tauri::AppHandle,
 ) -> Result<String, AppError> {
-    tracing::info!("[webfetch] Fetching URL: {} (format={}, timeout={}s)", url, format, timeout_secs);
+    tracing::info!(
+        "[webfetch] Fetching URL: {} (format={}, timeout={}s)",
+        url,
+        format,
+        timeout_secs
+    );
 
     let timeout = std::time::Duration::from_secs(timeout_secs.clamp(1, 120));
     let max_size = 5 * 1024 * 1024; // 5MB
@@ -21,15 +26,23 @@ pub async fn fetch_url(
 
     // Cloudflare blocked — retry with honest UA
     if is_cf_blocked(output.status, &output.cf_headers, &output.bytes) {
-        tracing::info!("[webfetch] Cloudflare blocked, retrying with honest UA for {}", url);
-        output = fetch_and_read(&client, url, true, max_size).await.map_err(|e| {
-            tracing::warn!("[webfetch] Retry failed for {}: {}", url, e);
-            e
-        })?;
+        tracing::info!(
+            "[webfetch] Cloudflare blocked, retrying with honest UA for {}",
+            url
+        );
+        output = fetch_and_read(&client, url, true, max_size)
+            .await
+            .map_err(|e| {
+                tracing::warn!("[webfetch] Retry failed for {}: {}", url, e);
+                e
+            })?;
 
         // Still CF blocked after retry — fall back to WebView (Chrome TLS)
         if is_cf_blocked(output.status, &output.cf_headers, &output.bytes) {
-            tracing::info!("[webfetch] Still CF blocked, falling back to WebView fetch for {}", url);
+            tracing::info!(
+                "[webfetch] Still CF blocked, falling back to WebView fetch for {}",
+                url
+            );
             let (bytes, ct) = crate::webview_bridge::fetch_via_webview(url, app).await?;
             return process_bytes(bytes, &ct, format, url);
         }
@@ -58,7 +71,11 @@ fn process_bytes(
     );
 
     let text = String::from_utf8_lossy(&bytes).to_string();
-    let fmt = if format.is_empty() { "markdown" } else { format };
+    let fmt = if format.is_empty() {
+        "markdown"
+    } else {
+        format
+    };
 
     match fmt {
         "html" => {
@@ -67,7 +84,10 @@ fn process_bytes(
         }
         "text" if content_type.contains("text/html") => {
             let plain = strip_html_tags(&text);
-            tracing::info!("[webfetch] HTML stripped to plain text, {} chars", plain.len());
+            tracing::info!(
+                "[webfetch] HTML stripped to plain text, {} chars",
+                plain.len()
+            );
             Ok(plain)
         }
         "markdown" if content_type.contains("text/html") => {
@@ -84,11 +104,17 @@ fn process_bytes(
                 let truncated_len = 100_000 + "[内容过长，已截断]".len();
                 tracing::info!(
                     "[webfetch] Text truncated from {} to {} chars for {}",
-                    text.len(), truncated_len, url
+                    text.len(),
+                    truncated_len,
+                    url
                 );
                 return Ok(text[..100_000].to_string() + "\n\n[内容过长，已截断]");
             }
-            tracing::info!("[webfetch] Successfully fetched {} chars from {}", text.len(), url);
+            tracing::info!(
+                "[webfetch] Successfully fetched {} chars from {}",
+                text.len(),
+                url
+            );
             Ok(text)
         }
     }
@@ -147,7 +173,9 @@ async fn fetch_and_read(
             if len > max_size {
                 tracing::warn!(
                     "[webfetch] Content-Length {} exceeds limit for {} (max {})",
-                    len, url, max_size
+                    len,
+                    url,
+                    max_size
                 );
                 return Err(AppError::Http(format!(
                     "Response too large ({} bytes, max {} bytes)",
@@ -157,23 +185,35 @@ async fn fetch_and_read(
         }
     }
 
-    let bytes = resp.bytes().await.map_err(|e| {
-        tracing::warn!("[webfetch] Failed to read response body for {}: {}", url, e);
-        AppError::Http(format!("Failed to read response: {}", e))
-    })?.to_vec();
+    let bytes = resp
+        .bytes()
+        .await
+        .map_err(|e| {
+            tracing::warn!("[webfetch] Failed to read response body for {}: {}", url, e);
+            AppError::Http(format!("Failed to read response: {}", e))
+        })?
+        .to_vec();
 
     if bytes.len() > max_size {
         tracing::warn!(
             "[webfetch] Response too large for {}: {} bytes (max {})",
-            url, bytes.len(), max_size
+            url,
+            bytes.len(),
+            max_size
         );
         return Err(AppError::Http(format!(
             "Response too large ({} bytes, max {} bytes)",
-            bytes.len(), max_size
+            bytes.len(),
+            max_size
         )));
     }
 
-    Ok(FetchOutput { status, cf_headers, content_type, bytes })
+    Ok(FetchOutput {
+        status,
+        cf_headers,
+        content_type,
+        bytes,
+    })
 }
 
 async fn do_fetch(

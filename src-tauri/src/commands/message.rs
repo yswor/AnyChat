@@ -61,11 +61,26 @@ pub struct StreamChunk {
     pub usage_cached: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call: Option<ToolCallEvent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCallEvent {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
 }
 
 const MAX_TOOL_ROUNDS: usize = 5;
 
-fn build_body(params: &StreamChatParams, messages: &[ChatMessage]) -> HashMap<String, serde_json::Value> {
+fn build_body(
+    params: &StreamChatParams,
+    messages: &[ChatMessage],
+) -> HashMap<String, serde_json::Value> {
     let mut body: HashMap<String, serde_json::Value> = HashMap::new();
     body.insert("model".to_string(), serde_json::json!(params.model));
 
@@ -106,9 +121,10 @@ fn build_body(params: &StreamChatParams, messages: &[ChatMessage]) -> HashMap<St
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "url": {
-                            "type": "string",
-                            "description": "要获取内容的 URL，必须是完整的 http:// 或 https:// 链接"
+                        "urls": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "要获取内容的 URL 列表（最多 3 个），每个必须是完整的 http:// 或 https:// 链接"
                         },
                         "format": {
                             "type": "string",
@@ -120,30 +136,51 @@ fn build_body(params: &StreamChatParams, messages: &[ChatMessage]) -> HashMap<St
                             "description": "请求超时时间（秒），默认30秒，最大120秒"
                         }
                     },
-                    "required": ["url"]
+                    "required": ["urls"]
                 }
             }
         }]),
     );
 
     if params.max_tokens > 0 {
-        body.insert("max_tokens".to_string(), serde_json::json!(params.max_tokens));
+        body.insert(
+            "max_tokens".to_string(),
+            serde_json::json!(params.max_tokens),
+        );
     }
 
     if !params.thinking_enabled {
-        body.insert("temperature".to_string(), serde_json::json!(params.temperature));
+        body.insert(
+            "temperature".to_string(),
+            serde_json::json!(params.temperature),
+        );
         body.insert("top_p".to_string(), serde_json::json!(params.top_p));
-        body.insert("frequency_penalty".to_string(), serde_json::json!(params.frequency_penalty));
-        body.insert("presence_penalty".to_string(), serde_json::json!(params.presence_penalty));
+        body.insert(
+            "frequency_penalty".to_string(),
+            serde_json::json!(params.frequency_penalty),
+        );
+        body.insert(
+            "presence_penalty".to_string(),
+            serde_json::json!(params.presence_penalty),
+        );
     }
 
     if params.thinking_enabled {
-        body.insert(params.thinking_switch_key.clone(), serde_json::json!({"type": "enabled"}));
+        body.insert(
+            params.thinking_switch_key.clone(),
+            serde_json::json!({"type": "enabled"}),
+        );
         if let Some(effort) = &params.reasoning_effort {
-            body.insert(params.thinking_effort_key.clone(), serde_json::json!(effort));
+            body.insert(
+                params.thinking_effort_key.clone(),
+                serde_json::json!(effort),
+            );
         }
     } else {
-        body.insert(params.thinking_switch_key.clone(), serde_json::json!({"type": "disabled"}));
+        body.insert(
+            params.thinking_switch_key.clone(),
+            serde_json::json!({"type": "disabled"}),
+        );
     }
 
     body
@@ -165,7 +202,10 @@ async fn do_sse_request(
     app: &tauri::AppHandle,
     conversation_id: &str,
 ) -> Result<SseResult, AppError> {
-    let model = body.get("model").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let model = body
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
     tracing::info!(
         "[sse] Sending streaming request to {} (model: {})",
         url,
@@ -173,7 +213,11 @@ async fn do_sse_request(
     );
 
     let body_str = serde_json::to_string(body).unwrap_or_default();
-    tracing::info!("[sse] REQUEST body ({} bytes): {}", body_str.len(), body_str);
+    tracing::info!(
+        "[sse] REQUEST body ({} bytes): {}",
+        body_str.len(),
+        body_str
+    );
 
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(30))
@@ -212,7 +256,7 @@ async fn do_sse_request(
             error_text
         );
         let _ = app.emit(
-            &format!("chat-stream:{}-error", conversation_id),
+            &format!("chat-stream:{}", conversation_id),
             StreamChunk {
                 content: None,
                 reasoning_content: None,
@@ -222,6 +266,7 @@ async fn do_sse_request(
                 usage_completion: None,
                 usage_cached: None,
                 tool_status: None,
+                tool_call: None,
             },
         );
         return Err(AppError::Http(err_msg));
@@ -235,24 +280,27 @@ async fn do_sse_request(
     let mut tool_calls: Vec<serde_json::Value> = Vec::new();
 
     loop {
-        let chunk = match tokio::time::timeout(read_timeout, futures_util::StreamExt::next(&mut stream)).await {
-            Err(_elapsed) => {
-                tracing::warn!(
-                    "[sse] Stream read timeout for conversation {}: no data for {}s",
-                    conversation_id,
-                    read_timeout.as_secs()
-                );
-                return Err(AppError::Stream(format!(
-                    "Stream read timeout: no data received for {}s",
-                    read_timeout.as_secs()
-                )));
-            }
-            Ok(None) => break,
-            Ok(Some(Err(e))) => {
-                return Err(AppError::Stream(format!("Stream error: {}", e)));
-            }
-            Ok(Some(Ok(bytes))) => bytes,
-        };
+        let chunk =
+            match tokio::time::timeout(read_timeout, futures_util::StreamExt::next(&mut stream))
+                .await
+            {
+                Err(_elapsed) => {
+                    tracing::warn!(
+                        "[sse] Stream read timeout for conversation {}: no data for {}s",
+                        conversation_id,
+                        read_timeout.as_secs()
+                    );
+                    return Err(AppError::Stream(format!(
+                        "Stream read timeout: no data received for {}s",
+                        read_timeout.as_secs()
+                    )));
+                }
+                Ok(None) => break,
+                Ok(Some(Err(e))) => {
+                    return Err(AppError::Stream(format!("Stream error: {}", e)));
+                }
+                Ok(Some(Ok(bytes))) => bytes,
+            };
 
         let text = String::from_utf8_lossy(&chunk);
         line_buf.push_str(&text);
@@ -285,7 +333,9 @@ async fn do_sse_request(
                             last_usage = Some((
                                 usage["prompt_tokens"].as_i64().unwrap_or(0),
                                 usage["completion_tokens"].as_i64().unwrap_or(0),
-                                usage["prompt_tokens_details"]["cached_tokens"].as_i64().unwrap_or(0),
+                                usage["prompt_tokens_details"]["cached_tokens"]
+                                    .as_i64()
+                                    .unwrap_or(0),
                             ));
                         }
 
@@ -322,10 +372,10 @@ async fn do_sse_request(
                                                         && func_obj["arguments"].is_string()
                                                     {
                                                         // arguments string arrives in fragments — concatenate
-                                                        let prev: &str =
-                                                            func_obj["arguments"].as_str().unwrap_or("");
-                                                        let next: &str =
-                                                            fv.as_str().unwrap_or("");
+                                                        let prev: &str = func_obj["arguments"]
+                                                            .as_str()
+                                                            .unwrap_or("");
+                                                        let next: &str = fv.as_str().unwrap_or("");
                                                         let merged = format!("{}{}", prev, next);
                                                         func_obj["arguments"] =
                                                             serde_json::json!(merged);
@@ -360,6 +410,7 @@ async fn do_sse_request(
                                     usage_completion: None,
                                     usage_cached: None,
                                     tool_status: None,
+                                    tool_call: None,
                                 },
                             );
                         }
@@ -383,27 +434,48 @@ async fn do_sse_request(
 async fn execute_tool(name: &str, args: &serde_json::Value, app: &tauri::AppHandle) -> String {
     match name {
         "webfetch" => {
-            let url = args["url"].as_str().unwrap_or("");
-            if url.is_empty() {
-                tracing::warn!("[tool] webfetch called with empty URL");
+            let urls: Vec<&str> = if let Some(arr) = args["urls"].as_array() {
+                arr.iter().take(3).filter_map(|v| v.as_str()).collect()
+            } else if let Some(u) = args["url"].as_str() {
+                vec![u]
+            } else {
+                tracing::warn!("[tool] webfetch called with no URLs");
+                return "错误: 未提供 URL".to_string();
+            };
+            if urls.is_empty() {
                 return "错误: 未提供 URL".to_string();
             }
             let format = args["format"].as_str().unwrap_or("markdown");
             let timeout = args["timeout"].as_u64().unwrap_or(30);
-            tracing::info!("[tool] Executing webfetch for {} (format={}, timeout={}s)", url, format, timeout);
-            match web_fetch::fetch_url(url, format, timeout, app).await {
-                Ok(content) => {
-                    tracing::info!(
-                        "[tool] webfetch succeeded for {}: {} chars",
-                        url,
-                        content.len()
-                    );
-                    content
+            tracing::info!(
+                "[tool] Executing webfetch for {} URL(s) (format={}, timeout={}s)",
+                urls.len(),
+                format,
+                timeout
+            );
+
+            let mut results: Vec<String> = Vec::new();
+            for url in &urls {
+                match web_fetch::fetch_url(url, format, timeout, app).await {
+                    Ok(content) => {
+                        tracing::info!(
+                            "[tool] webfetch succeeded for {}: {} chars",
+                            url,
+                            content.len()
+                        );
+                        results.push(format!("## {}\n\n{}", url, content));
+                    }
+                    Err(e) => {
+                        tracing::warn!("[tool] webfetch failed for {}: {}", url, e);
+                        results.push(format!("## {}\n\n获取失败: {}", url, e));
+                    }
                 }
-                Err(e) => {
-                    tracing::warn!("[tool] webfetch failed for {}: {}", url, e);
-                    format!("获取网页失败: {}", e)
-                }
+            }
+            let combined = results.join("\n\n---\n\n");
+            if combined.len() > 100_000 {
+                format!("{}\n\n[内容过长，已截断]", &combined[..100_000])
+            } else {
+                combined
             }
         }
         _ => {
@@ -447,12 +519,17 @@ pub async fn stream_chat_request(
                 MAX_TOOL_ROUNDS
             );
             let _ = app.emit(
-                &format!("chat-stream:{}-error", conversation_id),
+                &format!("chat-stream:{}", conversation_id),
                 StreamChunk {
-                    content: None, reasoning_content: None, done: true,
+                    content: None,
+                    reasoning_content: None,
+                    done: true,
                     error: Some("达到最大工具调用轮数".into()),
-                    usage_prompt: None, usage_completion: None, usage_cached: None,
+                    usage_prompt: None,
+                    usage_completion: None,
+                    usage_cached: None,
                     tool_status: None,
+                    tool_call: None,
                 },
             );
             return Err(AppError::Stream("Max tool call rounds reached".into()));
@@ -499,6 +576,7 @@ pub async fn stream_chat_request(
                     usage_completion: (uc > 0).then_some(uc),
                     usage_cached: (uca > 0).then_some(uca),
                     tool_status: None,
+                    tool_call: None,
                 },
             );
             return Ok(result.content);
@@ -512,11 +590,19 @@ pub async fn stream_chat_request(
         );
 
         // Append assistant message with tool_calls
-        let assistant_content: Option<String> = if result.content.is_empty() { None } else { Some(result.content.clone()) };
+        let assistant_content: Option<String> = if result.content.is_empty() {
+            None
+        } else {
+            Some(result.content.clone())
+        };
         messages.push(ChatMessage {
             role: "assistant".to_string(),
             content: assistant_content,
-            reasoning_content: if !result.reasoning.is_empty() { Some(result.reasoning.clone()) } else { None },
+            reasoning_content: if !result.reasoning.is_empty() {
+                Some(result.reasoning.clone())
+            } else {
+                None
+            },
             tool_calls: Some(result.tool_calls.clone()),
             tool_call_id: None,
             name: None,
@@ -527,6 +613,7 @@ pub async fn stream_chat_request(
             let func = &tc["function"];
             let func_name = func["name"].as_str().unwrap_or("");
             let func_args = &func["arguments"];
+            let args_str = func_args.as_str().unwrap_or("{}").to_string();
 
             // Parse arguments (may be JSON string)
             let args: serde_json::Value = if let Some(s) = func_args.as_str() {
@@ -535,10 +622,20 @@ pub async fn stream_chat_request(
                 func_args.clone()
             };
 
+            let tc_id = tc["id"].as_str().unwrap_or("").to_string();
+
             let status_msg = match func_name {
                 "webfetch" => {
-                    let url = args["url"].as_str().unwrap_or("");
-                    format!("正在获取网页内容: {}", url)
+                    let count = args["urls"].as_array().map(|a| a.len().min(3)).unwrap_or(0);
+                    if count == 0 {
+                        if let Some(u) = args["url"].as_str() {
+                            format!("正在获取网页内容: {}", u)
+                        } else {
+                            "正在获取网页内容".to_string()
+                        }
+                    } else {
+                        format!("正在获取 {} 个网页内容", count)
+                    }
                 }
                 _ => format!("正在执行: {}", func_name),
             };
@@ -554,11 +651,47 @@ pub async fn stream_chat_request(
                     usage_completion: None,
                     usage_cached: None,
                     tool_status: Some(status_msg),
+                    tool_call: Some(ToolCallEvent {
+                        id: tc_id.clone(),
+                        name: func_name.to_string(),
+                        arguments: args_str.clone(),
+                        status: "executing".to_string(),
+                        result: None,
+                    }),
                 },
             );
 
             let tool_result = execute_tool(func_name, &args, &app).await;
-            let tc_id = tc["id"].as_str().unwrap_or("").to_string();
+
+            let result_status = if tool_result.starts_with("错误")
+                || tool_result.starts_with("获取网页失败")
+                || tool_result.starts_with("不支持的工具")
+            {
+                "failed"
+            } else {
+                "completed"
+            };
+
+            let _ = app.emit(
+                &format!("chat-stream:{}", conversation_id),
+                StreamChunk {
+                    content: None,
+                    reasoning_content: None,
+                    done: false,
+                    error: None,
+                    usage_prompt: None,
+                    usage_completion: None,
+                    usage_cached: None,
+                    tool_status: Some(String::new()),
+                    tool_call: Some(ToolCallEvent {
+                        id: tc_id.clone(),
+                        name: func_name.to_string(),
+                        arguments: args_str,
+                        status: result_status.to_string(),
+                        result: Some(tool_result.clone()),
+                    }),
+                },
+            );
 
             messages.push(ChatMessage {
                 role: "tool".to_string(),

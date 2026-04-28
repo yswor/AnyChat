@@ -105,7 +105,10 @@ fn parse_balance_response(raw: &serde_json::Value) -> Result<BalanceInfo, AppErr
                 currency: item["currency"].as_str().unwrap_or("CNY").to_string(),
                 total_balance: item["total_balance"].as_str().unwrap_or("0").to_string(),
                 granted_balance: item["granted_balance"].as_str().unwrap_or("0").to_string(),
-                topped_up_balance: item["topped_up_balance"].as_str().unwrap_or("0").to_string(),
+                topped_up_balance: item["topped_up_balance"]
+                    .as_str()
+                    .unwrap_or("0")
+                    .to_string(),
             });
         }
         return Err(AppError::Http(
@@ -115,7 +118,10 @@ fn parse_balance_response(raw: &serde_json::Value) -> Result<BalanceInfo, AppErr
 
     // Kimi format: { "code": 0, "data": { "available_balance": 49.58, ... } }
     if let Some(data) = raw.get("data") {
-        let available = data.get("available_balance").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let available = data
+            .get("available_balance")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
         return Ok(BalanceInfo {
             currency: "CNY".to_string(),
             total_balance: format!("{:.2}", available),
