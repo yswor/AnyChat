@@ -541,6 +541,14 @@
   border-color: #e74c3c;
 }
 
+.chat-bubble__tool-node-url {
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding-left: 20px;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
 .chat-bubble__tool-node-icon {
   font-size: 14px;
   line-height: 1;

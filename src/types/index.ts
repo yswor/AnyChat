@@ -88,6 +88,7 @@ export interface ToolCallEvent {
 export interface ToolCallNode {
   reasoning: string;
   toolName: string;
+  arguments?: string;
   toolStatus: "executing" | "completed" | "failed";
   toolResult?: string;
 }

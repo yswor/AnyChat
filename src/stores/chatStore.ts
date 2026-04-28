@@ -550,6 +550,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                 toolCallNodes: [...s.streamState.toolCallNodes, {
                   reasoning: snapshotReasoning,
                   toolName: tc.name,
+                  arguments: tc.arguments,
                   toolStatus: "executing",
                 }],
               },

@@ -2,6 +2,15 @@ import { useState, useEffect } from "react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import type { Message, ToolCallNode } from "../types";
 
+function extractToolUrls(node: ToolCallNode): string[] {
+  if (node.toolName !== "webfetch" || !node.arguments) return [];
+  try {
+    const parsed = JSON.parse(node.arguments);
+    const urls: string[] = parsed.urls || (parsed.url ? [parsed.url] : []);
+    return urls.slice(0, 3);
+  } catch { return []; }
+}
+
 interface ChatBubbleProps {
   message: Message;
   isStreaming: boolean;
@@ -94,6 +103,9 @@ export function ChatBubble({
                   {node.toolStatus === "completed" && <span>· 完成</span>}
                   {node.toolStatus === "failed" && <span>· 失败</span>}
                 </div>
+                {extractToolUrls(node).map((url, j) => (
+                  <div key={j} className="chat-bubble__tool-node-url">{url}</div>
+                ))}
               </div>
             ))}
           </div>
