@@ -76,7 +76,11 @@ fn build_body(params: &StreamChatParams, messages: &[ChatMessage]) -> HashMap<St
             let mut m = serde_json::Map::new();
             m.insert("role".to_string(), serde_json::json!(&msg.role));
             m.insert("content".to_string(), serde_json::json!(&msg.content));
-            m.insert("name".to_string(), serde_json::json!(msg.name.as_deref().unwrap_or("")));
+            if let Some(ref n) = msg.name {
+                if !n.is_empty() {
+                    m.insert("name".to_string(), serde_json::json!(n));
+                }
+            }
             if let Some(ref rc) = msg.reasoning_content {
                 m.insert("reasoning_content".to_string(), serde_json::json!(rc));
             }
@@ -152,6 +156,16 @@ async fn do_sse_request(
     app: &tauri::AppHandle,
     conversation_id: &str,
 ) -> Result<SseResult, AppError> {
+    let model = body.get("model").and_then(|v| v.as_str()).unwrap_or("unknown");
+    tracing::info!(
+        "[sse] Sending streaming request to {} (model: {})",
+        url,
+        model
+    );
+
+    let body_str = serde_json::to_string(body).unwrap_or_default();
+    tracing::info!("[sse] REQUEST body ({} bytes): {}", body_str.len(), body_str);
+
     let client = reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(30))
         .tcp_keepalive(Some(std::time::Duration::from_secs(30)))
@@ -165,17 +179,29 @@ async fn do_sse_request(
             .post(url)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
-            .json(body)
+            .body(body_str.clone())
             .send(),
     )
     .await
-    .map_err(|_| AppError::Stream("Request timed out waiting for server response".into()))?
-    .map_err(|e| AppError::Http(format!("Request failed: {}", e)))?;
+    .map_err(|_| {
+        tracing::warn!("[sse] Request timed out waiting for server response");
+        AppError::Stream("Request timed out waiting for server response".into())
+    })?
+    .map_err(|e| {
+        tracing::warn!("[sse] Request failed: {}", e);
+        AppError::Http(format!("Request failed: {}", e))
+    })?;
 
     if !response.status().is_success() {
         let status = response.status().as_u16();
         let error_text = response.text().await.unwrap_or_default();
         let err_msg = format!("API error {}: {}", status, error_text);
+        tracing::warn!(
+            "[sse] HTTP {} for conversation {}: {}",
+            status,
+            conversation_id,
+            error_text
+        );
         let _ = app.emit(
             &format!("chat-stream:{}-error", conversation_id),
             StreamChunk {
@@ -202,6 +228,11 @@ async fn do_sse_request(
     loop {
         let chunk = match tokio::time::timeout(read_timeout, futures_util::StreamExt::next(&mut stream)).await {
             Err(_elapsed) => {
+                tracing::warn!(
+                    "[sse] Stream read timeout for conversation {}: no data for {}s",
+                    conversation_id,
+                    read_timeout.as_secs()
+                );
                 return Err(AppError::Stream(format!(
                     "Stream read timeout: no data received for {}s",
                     read_timeout.as_secs()
@@ -225,6 +256,12 @@ async fn do_sse_request(
                 continue;
             }
             if line == "data: [DONE]" {
+                tracing::info!(
+                    "[sse] Stream ended for conversation {}: {} content chars, {} tool_calls",
+                    conversation_id,
+                    full_content.len(),
+                    tool_calls.len()
+                );
                 return Ok(SseResult {
                     content: full_content,
                     reasoning: full_reasoning,
@@ -258,7 +295,37 @@ async fn do_sse_request(
                                 // Shallow merge: copy non-null fields from tc into existing
                                 if let Some(obj) = tc.as_object() {
                                     for (k, v) in obj {
-                                        if !v.is_null() {
+                                        if v.is_null() {
+                                            continue;
+                                        }
+                                        if k == "function" {
+                                            // function is a nested object — recurse into it
+                                            if existing.get("function").is_none() {
+                                                existing["function"] = serde_json::json!({});
+                                            }
+                                            let func_obj = &mut existing["function"];
+                                            if let Some(func_new) = v.as_object() {
+                                                for (fk, fv) in func_new {
+                                                    if fv.is_null() {
+                                                        continue;
+                                                    }
+                                                    if fk == "arguments"
+                                                        && func_obj["arguments"].is_string()
+                                                    {
+                                                        // arguments string arrives in fragments — concatenate
+                                                        let prev: &str =
+                                                            func_obj["arguments"].as_str().unwrap_or("");
+                                                        let next: &str =
+                                                            fv.as_str().unwrap_or("");
+                                                        let merged = format!("{}{}", prev, next);
+                                                        func_obj["arguments"] =
+                                                            serde_json::json!(merged);
+                                                    } else {
+                                                        func_obj[fk] = fv.clone();
+                                                    }
+                                                }
+                                            }
+                                        } else {
                                             existing[k] = v.clone();
                                         }
                                     }
@@ -309,14 +376,29 @@ async fn execute_tool(name: &str, args: &serde_json::Value) -> String {
         "webfetch" => {
             let url = args["url"].as_str().unwrap_or("");
             if url.is_empty() {
+                tracing::warn!("[tool] webfetch called with empty URL");
                 return "错误: 未提供 URL".to_string();
             }
+            tracing::info!("[tool] Executing webfetch for {}", url);
             match web_fetch::fetch_url(url, "").await {
-                Ok(content) => content,
-                Err(e) => format!("获取网页失败: {}", e),
+                Ok(content) => {
+                    tracing::info!(
+                        "[tool] webfetch succeeded for {}: {} chars",
+                        url,
+                        content.len()
+                    );
+                    content
+                }
+                Err(e) => {
+                    tracing::warn!("[tool] webfetch failed for {}: {}", url, e);
+                    format!("获取网页失败: {}", e)
+                }
             }
         }
-        _ => format!("不支持的工具: {}", name),
+        _ => {
+            tracing::warn!("[tool] Unknown tool requested: {}", name);
+            format!("不支持的工具: {}", name)
+        }
     }
 }
 
@@ -348,6 +430,11 @@ pub async fn stream_chat_request(
 
     loop {
         if round >= MAX_TOOL_ROUNDS {
+            tracing::warn!(
+                "[chat] Conversation {} reached max tool call rounds ({})",
+                conversation_id,
+                MAX_TOOL_ROUNDS
+            );
             let _ = app.emit(
                 &format!("chat-stream:{}-error", conversation_id),
                 StreamChunk {
@@ -362,6 +449,14 @@ pub async fn stream_chat_request(
 
         let body = build_body(&params, &messages);
 
+        tracing::info!(
+            "[chat] Tool call round {}/{} for conversation {} ({} messages)",
+            round + 1,
+            MAX_TOOL_ROUNDS,
+            conversation_id,
+            messages.len()
+        );
+
         let result = do_sse_request(
             &url,
             &params.api_key,
@@ -375,6 +470,12 @@ pub async fn stream_chat_request(
 
         // No tool calls — this is the final answer
         if result.tool_calls.is_empty() {
+            tracing::info!(
+                "[chat] Conversation {}: final answer after {} round(s), {} chars",
+                conversation_id,
+                round,
+                result.content.len()
+            );
             let (up, uc, uca) = result.usage.unwrap_or((0, 0, 0));
             let _ = app.emit(
                 &format!("chat-stream:{}", conversation_id),
@@ -391,6 +492,13 @@ pub async fn stream_chat_request(
             );
             return Ok(result.content);
         }
+
+        tracing::info!(
+            "[chat] Conversation {}: received {} tool call(s) in round {}",
+            conversation_id,
+            result.tool_calls.len(),
+            round
+        );
 
         // Append assistant message with tool_calls
         let assistant_content: Option<String> = if result.content.is_empty() { None } else { Some(result.content.clone()) };
@@ -447,7 +555,7 @@ pub async fn stream_chat_request(
                 reasoning_content: None,
                 tool_calls: None,
                 tool_call_id: Some(tc_id),
-                name: Some(func_name.to_string()),
+                name: None,
             });
         }
 

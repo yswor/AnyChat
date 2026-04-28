@@ -881,6 +881,15 @@
   text-decoration: underline;
 }
 
+.chat-bubble--user .markdown-body a {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.chat-bubble--user .markdown-body a:hover {
+  text-decoration: none;
+}
+
 .markdown-body hr {
   border: none;
   border-top: 1px solid var(--border);
