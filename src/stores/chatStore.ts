@@ -684,7 +684,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         streamState: emptyStreamState(),
         messages: s.messages.map((m) =>
           m.id === assistantMsgId
-            ? { ...m, content: finalContent, reasoning_content: finalReasoning || undefined, tokens: totalTokens, usage_details: usageDetails }
+            ? { ...m, content: finalContent, reasoning_content: finalReasoning || undefined, tokens: totalTokens, usage_details: usageDetails, toolNodes: s.streamState.toolCallNodes }
             : m,
         ),
       }));

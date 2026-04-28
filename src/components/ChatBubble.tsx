@@ -38,6 +38,7 @@ export function ChatBubble({
   const content = isStreaming && isAssistant ? (streamContent ?? message.content) : message.content;
   const reasoning = isStreaming && isAssistant ? (streamReasoning || message.reasoning_content) : message.reasoning_content;
   const showReasoning = Boolean(reasoning);
+  const toolNodes = toolCallNodes ?? message.toolNodes;
 
   const isReaderMsg = isReaderMode && isAssistant;
   const showPreview = isReaderMsg && content.length > 120;
@@ -76,9 +77,9 @@ export function ChatBubble({
             )}
           </div>
             )}
-        {toolCallNodes && toolCallNodes.length > 0 && (
+        {toolNodes && toolNodes.length > 0 && (
           <div className="chat-bubble__tool-calls">
-            {toolCallNodes.map((node, i) => (
+            {toolNodes.map((node, i) => (
               <div key={i} className="chat-bubble__tool-node">
                 {node.reasoning && (
                   <div className="chat-bubble__tool-node-reasoning">

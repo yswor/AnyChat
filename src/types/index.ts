@@ -55,6 +55,7 @@ export interface Message {
   provider_id?: string;
   tool_call_id?: string;
   tool_calls?: ToolCallEvent[];
+  toolNodes?: ToolCallNode[];
   created_at: string;
 }
 
