@@ -48,7 +48,8 @@ export function ChatBubble({
   const reasoning = isStreaming && isAssistant ? (streamReasoning || message.reasoning_content) : message.reasoning_content;
   const showReasoning = Boolean(reasoning);
   const toolNodes = toolCallNodes ?? message.toolNodes;
-  const showReasoningBlock = showReasoning && !(toolNodes && toolNodes.length > 0);
+  const hasToolNodes = toolNodes && toolNodes.length > 0;
+  const isNonThinking = hasToolNodes && toolNodes?.[0]?.mode === "non-thinking";
 
   const isReaderMsg = isReaderMode && isAssistant;
   const showPreview = isReaderMsg && content.length > 120;
@@ -66,7 +67,7 @@ export function ChatBubble({
   return (
     <div className={`chat-bubble ${isUser ? "chat-bubble--user" : "chat-bubble--assistant"}`}>
       <div className="chat-bubble__body">
-        {showReasoningBlock && (
+        {showReasoning && (
           <div className="chat-bubble__reasoning">
             <div
               className="chat-bubble__reasoning-summary"
@@ -77,22 +78,10 @@ export function ChatBubble({
                 {reasoningExpanded ? "收起 ▲" : "展开 ▼"}
               </span>
             </div>
-            {reasoningExpanded && (
-              <div
-                className="chat-bubble__reasoning-content"
-                onClick={() => setReasoningExpanded(false)}
-              >
-                <MarkdownRenderer content={reasoning || ""} />
-              </div>
-            )}
-          </div>
-            )}
-        {toolNodes && toolNodes.length > 0 && (
-          <div className="chat-bubble__tool-calls">
-            {toolNodes.map((node, i) => (
+            {reasoningExpanded && hasToolNodes && toolNodes.map((node, i) => (
               <div key={i} className="chat-bubble__tool-node">
                 {node.reasoning && (
-                  <div className={node.mode === "non-thinking" ? "chat-bubble__tool-node-plain" : "chat-bubble__tool-node-reasoning"}>
+                  <div className="chat-bubble__tool-node-reasoning">
                     <MarkdownRenderer content={node.reasoning} />
                   </div>
                 )}
@@ -109,18 +98,62 @@ export function ChatBubble({
                 ))}
               </div>
             ))}
+            {reasoningExpanded && !hasToolNodes && (
+              <div
+                className="chat-bubble__reasoning-content"
+                onClick={() => setReasoningExpanded(false)}
+              >
+                <MarkdownRenderer content={reasoning || ""} />
+              </div>
+            )}
           </div>
         )}
-        {isReaderMsg && isStreaming && !content && !reasoning && (
-          <div className="chat-bubble__content chat-bubble__content--placeholder">
-            <div className="chat-bubble__preview-hint chat-bubble__preview-loading">
-              <span className="typing-dot" />
-              <span className="typing-dot" />
-              <span className="typing-dot" />
+        {isNonThinking && toolNodes.map((node, i) => (
+          <div key={i} className="chat-bubble__tool-node">
+            {node.reasoning && (
+              <div className="chat-bubble__content">
+                <MarkdownRenderer content={node.reasoning} />
+              </div>
+            )}
+            <div className={`chat-bubble__tool-node-status chat-bubble__tool-node-status--${node.toolStatus}`}>
+              <span className="chat-bubble__tool-node-icon">
+                {node.toolStatus === "executing" ? "◌" : node.toolStatus === "completed" ? "✓" : "✕"}
+              </span>
+              <span>调用工具: {node.toolName}</span>
+              {node.toolStatus === "completed" && <span>· 完成</span>}
+              {node.toolStatus === "failed" && <span>· 失败</span>}
             </div>
+            {extractToolUrls(node).map((url, j) => (
+              <div key={j} className="chat-bubble__tool-node-url">{url}</div>
+            ))}
+          </div>
+        ))}
+        {isNonThinking && content && (
+          <div
+            className={`chat-bubble__content ${showPreview ? "chat-bubble__content--preview" : ""}`}
+            onClick={() => {
+              if (showPreview && !isStreaming && onOpenReader) {
+                onOpenReader(message);
+              }
+            }}
+          >
+            <MarkdownRenderer content={content} />
+            {showPreview && (
+              <div className="chat-bubble__preview-hint">
+                {isStreaming ? (
+                  <div className="chat-bubble__preview-loading">
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                    <span className="typing-dot" />
+                  </div>
+                ) : (
+                  "点击阅读全文"
+                )}
+              </div>
+            )}
           </div>
         )}
-        {content && (
+        {!isNonThinking && content && (
           <div
             className={`chat-bubble__content ${showPreview ? "chat-bubble__content--preview" : ""}`}
             onClick={() => {

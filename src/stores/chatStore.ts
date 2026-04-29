@@ -551,6 +551,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               return {
                 streamState: {
                   ...s.streamState,
+                  content: snapshotReasoning ? s.streamState.content : "",
                   toolCallNodes: [...s.streamState.toolCallNodes, {
                     reasoning: nodeReasoning,
                     toolName: tc.name,
