@@ -78,24 +78,28 @@ export function ChatBubble({
                 {reasoningExpanded ? "收起 ▲" : "展开 ▼"}
               </span>
             </div>
-            {reasoningExpanded && hasToolNodes && toolNodes.map((node, i) => (
-              <React.Fragment key={i}>
-                {node.reasoning && <MarkdownRenderer content={node.reasoning} />}
-                <div className="chat-bubble__tool-node">
-                  <div className={`chat-bubble__tool-node-status chat-bubble__tool-node-status--${node.toolStatus}`}>
-                    <span className="chat-bubble__tool-node-icon">
-                      {node.toolStatus === "executing" ? "◌" : node.toolStatus === "completed" ? "✓" : "✕"}
-                    </span>
-                    <span>调用工具: {node.toolName}</span>
-                    {node.toolStatus === "completed" && <span>· 完成</span>}
-                    {node.toolStatus === "failed" && <span>· 失败</span>}
-                  </div>
-                  {extractToolUrls(node).map((url, j) => (
-                    <div key={j} className="chat-bubble__tool-node-url">{url}</div>
-                  ))}
-                </div>
-              </React.Fragment>
-            ))}
+            {reasoningExpanded && hasToolNodes && (
+              <div className="chat-bubble__reasoning-content" onClick={() => setReasoningExpanded(false)}>
+                {toolNodes.map((node, i) => (
+                  <React.Fragment key={i}>
+                    {node.reasoning && <MarkdownRenderer content={node.reasoning} />}
+                    <div className="chat-bubble__tool-node">
+                      <div className={`chat-bubble__tool-node-status chat-bubble__tool-node-status--${node.toolStatus}`}>
+                        <span className="chat-bubble__tool-node-icon">
+                          {node.toolStatus === "executing" ? "◌" : node.toolStatus === "completed" ? "✓" : "✕"}
+                        </span>
+                        <span>调用工具: {node.toolName}</span>
+                        {node.toolStatus === "completed" && <span>· 完成</span>}
+                        {node.toolStatus === "failed" && <span>· 失败</span>}
+                      </div>
+                      {extractToolUrls(node).map((url, j) => (
+                        <div key={j} className="chat-bubble__tool-node-url">{url}</div>
+                      ))}
+                    </div>
+                  </React.Fragment>
+                ))}
+              </div>
+            )}
             {reasoningExpanded && !hasToolNodes && (
               <div
                 className="chat-bubble__reasoning-content"

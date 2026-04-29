@@ -124,6 +124,7 @@ function reconstructContent(displayContent: string, attachmentData: string): str
 function normalizeMessage(row: any): Message {
   const usageDetails = tryParseJson<Message["usage_details"]>(row.usage_details, undefined);
   const toolCalls = tryParseJson<Message["tool_calls"]>(row.tool_calls, undefined);
+  const toolNodes = tryParseJson<Message["toolNodes"]>(row.tool_nodes, undefined);
   return {
     id: row.id,
     conversation_id: row.conversation_id,
@@ -137,6 +138,7 @@ function normalizeMessage(row: any): Message {
     provider_id: row.provider_id || undefined,
     tool_call_id: row.tool_call_id || undefined,
     tool_calls: toolCalls,
+    toolNodes,
     created_at: row.created_at,
   };
 }
@@ -660,26 +662,33 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const totalTokens = usage.current ? (usage.current.prompt + usage.current.completion) : undefined;
       const usageDetails = usage.current ?? undefined;
 
+      const toolNodesJson = get().streamState.toolCallNodes.length > 0
+        ? JSON.stringify(get().streamState.toolCallNodes)
+        : null;
+
       try {
         await d.execute(
-          `UPDATE messages SET content = $1, reasoning_content = $2, tokens = $3, usage_details = $4 WHERE id = $5`,
+          `UPDATE messages SET content = $1, reasoning_content = $2, tokens = $3, usage_details = $4, tool_nodes = $5 WHERE id = $6`,
           [
             finalContent,
             finalReasoning || null,
             totalTokens ?? null,
             usageDetails ? JSON.stringify(usageDetails) : null,
+            toolNodesJson,
             assistantMsgId,
           ],
         );
       } catch {
         try { await d.execute("ALTER TABLE messages ADD COLUMN usage_details TEXT"); } catch { /* ok */ }
+        try { await d.execute("ALTER TABLE messages ADD COLUMN tool_nodes TEXT"); } catch { /* ok */ }
         await d.execute(
-          `UPDATE messages SET content = $1, reasoning_content = $2, tokens = $3, usage_details = $4 WHERE id = $5`,
+          `UPDATE messages SET content = $1, reasoning_content = $2, tokens = $3, usage_details = $4, tool_nodes = $5 WHERE id = $6`,
           [
             finalContent,
             finalReasoning || null,
             totalTokens ?? null,
             usageDetails ? JSON.stringify(usageDetails) : null,
+            toolNodesJson,
             assistantMsgId,
           ],
         );

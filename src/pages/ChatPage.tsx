@@ -8,7 +8,6 @@ import { ModelSelector } from "../components/ModelSelector";
 import { ThinkingToggle } from "../components/ThinkingToggle";
 import { SettingsModal } from "../components/SettingsModal";
 import { AttachmentBar } from "../components/AttachmentBar";
-import type { AttachedFile } from "../components/AttachmentBar";
 import {
   IconSend,
   IconStop,
@@ -20,6 +19,19 @@ import { useAutoScroll } from "../hooks/useAutoScroll";
 import { useFileAttachment } from "../hooks/useFileAttachment";
 import { useWebViewFetchFallback } from "../hooks/useWebViewFetchFallback";
 import type { Conversation, Message } from "../types";
+
+function isVisibleMessage(m: Message) {
+  if (m.role === "system" || m.role === "tool") return false;
+  if (m.role === "assistant" && m.tool_calls && m.tool_calls.length > 0) return false;
+  return true;
+}
+
+function isLastVisibleBubble(idx: number, msgs: Message[]) {
+  for (let i = idx + 1; i < msgs.length; i++) {
+    if (isVisibleMessage(msgs[i])) return false;
+  }
+  return true;
+}
 
 export function ChatPage() {
   const { id } = useParams<{ id: string }>();
@@ -275,11 +287,11 @@ export function ChatPage() {
             key={msg.id}
             message={msg}
             messageIndex={idx}
-            isLastBubble={idx === messages.length - 1}
+            isLastBubble={isLastVisibleBubble(idx, messages)}
             onRegenerate={handleRegenerate}
             isStreaming={
               isBusy &&
-              idx === messages.length - 1 &&
+              isLastVisibleBubble(idx, messages) &&
               msg.role === "assistant"
             }
             streamContent={
@@ -290,7 +302,7 @@ export function ChatPage() {
             }
             toolCallNodes={
               isBusy &&
-              idx === messages.length - 1 &&
+              isLastVisibleBubble(idx, messages) &&
               msg.role === "assistant"
                 ? streamState.toolCallNodes
                 : undefined

@@ -76,6 +76,21 @@ pub struct ToolCallEvent {
 }
 
 const MAX_TOOL_ROUNDS: usize = 5;
+const DOOM_LOOP_THRESHOLD: usize = 3;
+
+fn is_same_tool_calls(a: &[serde_json::Value], b: &[serde_json::Value]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    for (ca, cb) in a.iter().zip(b.iter()) {
+        if ca["function"]["name"] != cb["function"]["name"]
+            || ca["function"]["arguments"] != cb["function"]["arguments"]
+        {
+            return false;
+        }
+    }
+    true
+}
 
 fn build_body(
     params: &StreamChatParams,
@@ -185,7 +200,7 @@ fn build_body(
             "type": "function",
             "function": {
                 "name": "get_weather",
-                "description": "获取指定城市的实时天气信息，包括温度、天气状况、风速",
+                "description": "获取指定城市的当前天气和未来3天预报，包括温度、天气状况、风速、湿度",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -530,8 +545,8 @@ async fn execute_tool(name: &str, args: &serde_json::Value, app: &tauri::AppHand
                 }
             }
             let combined = results.join("\n\n---\n\n");
-            if combined.len() > 100_000 {
-                format!("{}\n\n[内容过长，已截断]", &combined[..100_000])
+            if combined.len() > 500_000 {
+                format!("{}\n\n[内容过长，已截断]", &combined[..500_000])
             } else {
                 combined
             }
@@ -561,58 +576,51 @@ async fn execute_tool(name: &str, args: &serde_json::Value, app: &tauri::AppHand
                 return "错误: 未提供城市名称".to_string();
             }
             let client = reqwest::Client::new();
+            let encoded = urlencoding::encode(location);
+            let weather_url = format!("https://wttr.in/{}?format=j1&lang=zh", encoded);
 
-            let geo_url = format!(
-                "https://geocoding-api.open-meteo.com/v1/search?name={}&count=1&language=zh",
-                location
-            );
-            let geo_json: serde_json::Value = match client.get(&geo_url).send().await {
-                Ok(r) => match r.json().await {
-                    Ok(j) => j,
-                    Err(e) => return format!("解析城市数据失败: {}", e),
-                },
-                Err(e) => return format!("查询城市失败: {}", e),
-            };
-            let results = geo_json["results"].as_array();
-            if results.is_none_or(|r| r.is_empty()) {
-                return format!("未找到城市: {}", location);
-            }
-            let first = &results.unwrap()[0];
-            let lat = first["latitude"].as_f64().unwrap_or(0.0);
-            let lon = first["longitude"].as_f64().unwrap_or(0.0);
-            let city = first["name"].as_str().unwrap_or(location);
-            let country = first["country"].as_str().unwrap_or("");
-
-            let weather_url = format!(
-                "https://api.open-meteo.com/v1/forecast?latitude={}&longitude={}&current_weather=true",
-                lat, lon
-            );
-            let w_json: serde_json::Value = match client.get(&weather_url).send().await {
+            let w_json: serde_json::Value = match client
+                .get(&weather_url)
+                .header("User-Agent", "AnyChat/1.0")
+                .send()
+                .await
+            {
                 Ok(r) => match r.json().await {
                     Ok(j) => j,
                     Err(e) => return format!("解析天气数据失败: {}", e),
                 },
                 Err(e) => return format!("查询天气失败: {}", e),
             };
-            let cw = &w_json["current_weather"];
-            let temp = cw["temperature"].as_f64().unwrap_or(0.0);
-            let wind = cw["windspeed"].as_f64().unwrap_or(0.0);
-            let code = cw["weathercode"].as_u64().unwrap_or(0);
-            let condition = match code {
-                0 => "晴天",
-                1..=3 => "多云",
-                45 | 48 => "雾",
-                51 | 53 | 55 => "小雨",
-                61 | 63 | 65 => "中雨",
-                71 | 73 | 75 => "雪",
-                80..=82 => "阵雨",
-                95 | 96 | 99 => "雷暴",
-                _ => "未知",
-            };
-            format!(
-                "{} ({}) 当前天气: {}，温度 {:.1}°C，风速 {:.1} km/h",
-                city, country, condition, temp, wind
-            )
+
+            let cc = &w_json["current_condition"][0];
+            let temp = cc["temp_C"].as_str().unwrap_or("N/A");
+            let desc = cc["weatherDesc"][0]["value"].as_str().unwrap_or("未知");
+            let wind = cc["windspeedKmph"].as_str().unwrap_or("N/A");
+            let humidity = cc["humidity"].as_str().unwrap_or("N/A");
+            let feels = cc["FeelsLikeC"].as_str().unwrap_or("N/A");
+
+            let area = &w_json["nearest_area"][0];
+            let city = area["areaName"][0]["value"].as_str().unwrap_or(location);
+            let country = area["country"][0]["value"].as_str().unwrap_or("");
+
+            let mut result = format!(
+                "{} ({})\n当前天气: {}，温度 {}°C (体感 {}°C)，风速 {} km/h，湿度 {}%",
+                city, country, desc, temp, feels, wind, humidity
+            );
+
+            if let Some(forecasts) = w_json["weather"].as_array() {
+                result.push_str("\n\n未来天气预报:");
+                for day in forecasts {
+                    let date = day["date"].as_str().unwrap_or("");
+                    let hi = day["maxtempC"].as_str().unwrap_or("N/A");
+                    let lo = day["mintempC"].as_str().unwrap_or("N/A");
+                    let day_desc = day["hourly"][4]["weatherDesc"][0]["value"]
+                        .as_str()
+                        .unwrap_or("未知");
+                    result.push_str(&format!("\n{}: {}，{}°C ~ {}°C", date, day_desc, lo, hi));
+                }
+            }
+            result
         }
         _ => {
             tracing::warn!("[tool] Unknown tool requested: {}", name);
@@ -646,31 +654,10 @@ pub async fn stream_chat_request(
 
     let mut messages = params.messages.clone();
     let mut round = 0;
+    let mut last_tool_calls: Vec<serde_json::Value> = Vec::new();
+    let mut doom_counter: usize = 0;
 
     loop {
-        if round >= MAX_TOOL_ROUNDS {
-            tracing::warn!(
-                "[chat] Conversation {} reached max tool call rounds ({})",
-                conversation_id,
-                MAX_TOOL_ROUNDS
-            );
-            let _ = app.emit(
-                &format!("chat-stream:{}", conversation_id),
-                StreamChunk {
-                    content: None,
-                    reasoning_content: None,
-                    done: true,
-                    error: Some("达到最大工具调用轮数".into()),
-                    usage_prompt: None,
-                    usage_completion: None,
-                    usage_cached: None,
-                    tool_status: None,
-                    tool_call: None,
-                },
-            );
-            return Err(AppError::Stream("Max tool call rounds reached".into()));
-        }
-
         let body = build_body(&params, &messages);
 
         tracing::info!(
@@ -725,6 +712,28 @@ pub async fn stream_chat_request(
             round
         );
 
+        // Doom loop detection
+        let doom_hit = if last_tool_calls.is_empty() {
+            last_tool_calls = result.tool_calls.clone();
+            doom_counter = 1;
+            false
+        } else if is_same_tool_calls(&result.tool_calls, &last_tool_calls) {
+            doom_counter += 1;
+            doom_counter >= DOOM_LOOP_THRESHOLD
+        } else {
+            last_tool_calls = result.tool_calls.clone();
+            doom_counter = 1;
+            false
+        };
+
+        if doom_hit {
+            tracing::warn!(
+                "[chat] Doom loop detected for conversation {} ({} consecutive identical tool calls)",
+                conversation_id,
+                doom_counter
+            );
+        }
+
         // Append assistant message with tool_calls
         let assistant_content: Option<String> = if result.content.is_empty() {
             None
@@ -744,109 +753,193 @@ pub async fn stream_chat_request(
             name: None,
         });
 
-        // Execute each tool
-        for tc in &result.tool_calls {
-            let func = &tc["function"];
-            let func_name = func["name"].as_str().unwrap_or("");
-            let func_args = &func["arguments"];
-            let args_str = func_args.as_str().unwrap_or("{}").to_string();
+        // Execute each tool (or skip if doom loop)
+        let doom_warning = "检测到重复工具调用循环（连续3次调用相同的工具和参数），请停止重复调用，基于已有数据回答问题或换用其他方式".to_string();
+        if doom_hit {
+            for tc in &result.tool_calls {
+                let tc_id = tc["id"].as_str().unwrap_or("").to_string();
+                let func = &tc["function"];
+                let func_name = func["name"].as_str().unwrap_or("");
 
-            // Parse arguments (may be JSON string)
-            let args: serde_json::Value = if let Some(s) = func_args.as_str() {
-                serde_json::from_str(s).unwrap_or(serde_json::json!({}))
-            } else {
-                func_args.clone()
-            };
+                let _ = app.emit(
+                    &format!("chat-stream:{}", conversation_id),
+                    StreamChunk {
+                        content: None,
+                        reasoning_content: None,
+                        done: false,
+                        error: None,
+                        usage_prompt: None,
+                        usage_completion: None,
+                        usage_cached: None,
+                        tool_status: Some(format!("检测到重复调用: {}", func_name)),
+                        tool_call: Some(ToolCallEvent {
+                            id: tc_id.clone(),
+                            name: func_name.to_string(),
+                            arguments: "{}".to_string(),
+                            status: "executing".to_string(),
+                            result: None,
+                        }),
+                    },
+                );
 
-            let tc_id = tc["id"].as_str().unwrap_or("").to_string();
+                let _ = app.emit(
+                    &format!("chat-stream:{}", conversation_id),
+                    StreamChunk {
+                        content: None,
+                        reasoning_content: None,
+                        done: false,
+                        error: None,
+                        usage_prompt: None,
+                        usage_completion: None,
+                        usage_cached: None,
+                        tool_status: Some(String::new()),
+                        tool_call: Some(ToolCallEvent {
+                            id: tc_id.clone(),
+                            name: func_name.to_string(),
+                            arguments: "{}".to_string(),
+                            status: "completed".to_string(),
+                            result: Some(doom_warning.clone()),
+                        }),
+                    },
+                );
 
-            let status_msg = match func_name {
-                "webfetch" => {
-                    let count = args["urls"].as_array().map(|a| a.len().min(5)).unwrap_or(0);
-                    if count == 0 {
-                        if let Some(u) = args["url"].as_str() {
-                            format!("正在获取网页内容: {}", u)
+                messages.push(ChatMessage {
+                    role: "tool".to_string(),
+                    content: Some(doom_warning.clone()),
+                    reasoning_content: None,
+                    tool_calls: None,
+                    tool_call_id: Some(tc_id),
+                    name: None,
+                });
+            }
+        } else {
+            for tc in &result.tool_calls {
+                let func = &tc["function"];
+                let func_name = func["name"].as_str().unwrap_or("");
+                let func_args = &func["arguments"];
+                let args_str = func_args.as_str().unwrap_or("{}").to_string();
+
+                // Parse arguments (may be JSON string)
+                let args: serde_json::Value = if let Some(s) = func_args.as_str() {
+                    serde_json::from_str(s).unwrap_or(serde_json::json!({}))
+                } else {
+                    func_args.clone()
+                };
+
+                let tc_id = tc["id"].as_str().unwrap_or("").to_string();
+
+                let status_msg = match func_name {
+                    "webfetch" => {
+                        let count = args["urls"].as_array().map(|a| a.len().min(5)).unwrap_or(0);
+                        if count == 0 {
+                            if let Some(u) = args["url"].as_str() {
+                                format!("正在获取网页内容: {}", u)
+                            } else {
+                                "正在获取网页内容".to_string()
+                            }
                         } else {
-                            "正在获取网页内容".to_string()
+                            format!("正在获取 {} 个网页内容", count)
                         }
-                    } else {
-                        format!("正在获取 {} 个网页内容", count)
                     }
-                }
-                "get_weather" => {
-                    let loc = args["location"].as_str().unwrap_or("");
-                    if loc.is_empty() {
-                        "正在查询天气".to_string()
-                    } else {
-                        format!("正在查询天气: {}", loc)
+                    "get_weather" => {
+                        let loc = args["location"].as_str().unwrap_or("");
+                        if loc.is_empty() {
+                            "正在查询天气".to_string()
+                        } else {
+                            format!("正在查询天气: {}", loc)
+                        }
                     }
-                }
-                _ => format!("正在执行: {}", func_name),
-            };
+                    _ => format!("正在执行: {}", func_name),
+                };
 
-            let _ = app.emit(
-                &format!("chat-stream:{}", conversation_id),
-                StreamChunk {
-                    content: None,
+                let _ = app.emit(
+                    &format!("chat-stream:{}", conversation_id),
+                    StreamChunk {
+                        content: None,
+                        reasoning_content: None,
+                        done: false,
+                        error: None,
+                        usage_prompt: None,
+                        usage_completion: None,
+                        usage_cached: None,
+                        tool_status: Some(status_msg),
+                        tool_call: Some(ToolCallEvent {
+                            id: tc_id.clone(),
+                            name: func_name.to_string(),
+                            arguments: args_str.clone(),
+                            status: "executing".to_string(),
+                            result: None,
+                        }),
+                    },
+                );
+
+                let tool_result = execute_tool(func_name, &args, &app).await;
+
+                let result_status = if tool_result.starts_with("错误")
+                    || tool_result.starts_with("获取网页失败")
+                    || tool_result.starts_with("不支持的工具")
+                {
+                    "failed"
+                } else {
+                    "completed"
+                };
+
+                let _ = app.emit(
+                    &format!("chat-stream:{}", conversation_id),
+                    StreamChunk {
+                        content: None,
+                        reasoning_content: None,
+                        done: false,
+                        error: None,
+                        usage_prompt: None,
+                        usage_completion: None,
+                        usage_cached: None,
+                        tool_status: Some(String::new()),
+                        tool_call: Some(ToolCallEvent {
+                            id: tc_id.clone(),
+                            name: func_name.to_string(),
+                            arguments: args_str,
+                            status: result_status.to_string(),
+                            result: Some(tool_result.clone()),
+                        }),
+                    },
+                );
+
+                messages.push(ChatMessage {
+                    role: "tool".to_string(),
+                    content: Some(tool_result),
                     reasoning_content: None,
-                    done: false,
-                    error: None,
-                    usage_prompt: None,
-                    usage_completion: None,
-                    usage_cached: None,
-                    tool_status: Some(status_msg),
-                    tool_call: Some(ToolCallEvent {
-                        id: tc_id.clone(),
-                        name: func_name.to_string(),
-                        arguments: args_str.clone(),
-                        status: "executing".to_string(),
-                        result: None,
-                    }),
-                },
-            );
-
-            let tool_result = execute_tool(func_name, &args, &app).await;
-
-            let result_status = if tool_result.starts_with("错误")
-                || tool_result.starts_with("获取网页失败")
-                || tool_result.starts_with("不支持的工具")
-            {
-                "failed"
-            } else {
-                "completed"
-            };
-
-            let _ = app.emit(
-                &format!("chat-stream:{}", conversation_id),
-                StreamChunk {
-                    content: None,
-                    reasoning_content: None,
-                    done: false,
-                    error: None,
-                    usage_prompt: None,
-                    usage_completion: None,
-                    usage_cached: None,
-                    tool_status: Some(String::new()),
-                    tool_call: Some(ToolCallEvent {
-                        id: tc_id.clone(),
-                        name: func_name.to_string(),
-                        arguments: args_str,
-                        status: result_status.to_string(),
-                        result: Some(tool_result.clone()),
-                    }),
-                },
-            );
-
-            messages.push(ChatMessage {
-                role: "tool".to_string(),
-                content: Some(tool_result),
-                reasoning_content: None,
-                tool_calls: None,
-                tool_call_id: Some(tc_id),
-                name: None,
-            });
+                    tool_calls: None,
+                    tool_call_id: Some(tc_id),
+                    name: None,
+                });
+            }
         }
 
         round += 1;
+
+        if round >= MAX_TOOL_ROUNDS {
+            tracing::warn!(
+                "[chat] Conversation {} reached max tool call rounds ({})",
+                conversation_id,
+                MAX_TOOL_ROUNDS
+            );
+            let (up, uc, uca) = result.usage.unwrap_or((0, 0, 0));
+            let _ = app.emit(
+                &format!("chat-stream:{}", conversation_id),
+                StreamChunk {
+                    content: None,
+                    reasoning_content: None,
+                    done: true,
+                    error: None,
+                    usage_prompt: (up > 0).then_some(up),
+                    usage_completion: (uc > 0).then_some(uc),
+                    usage_cached: (uca > 0).then_some(uca),
+                    tool_status: None,
+                    tool_call: None,
+                },
+            );
+            return Ok(result.content);
+        }
     }
 }

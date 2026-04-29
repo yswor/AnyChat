@@ -825,6 +825,11 @@
   line-height: 1.6;
 }
 
+.chat-bubble__reasoning .markdown-body {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
 .chat-bubble__typing {
   display: flex;
   gap: 4px;

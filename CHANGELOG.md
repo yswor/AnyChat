@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.5.2] - 2026-04-30
+
+### Fixed
+- 修复 HTML→text 解析：改用 html2text 库，跳过 script/style 文本，支持实体解码
+- Charset 编码检测：从 content-type 提取 charset（gbk/shift_jis 等），正确解码非 UTF-8 页面
+- 二进制 MIME 拒绝：image/video/audio/font 等直接返回友好错误
+- 重复工具调用检测：连续 3 轮相同调用时发送警告，避免死循环
+
+### Changed
+- Accept 头按 format 动态变化，Accept-Language 改 zh-CN 优先
+
+## [1.5.1] - 2026-04-30
+
+### Fixed
+- 修复有 tool node 时思考过程内容无法点击收起
+
+## [1.5.0] - 2026-04-30
+
+### Added
+- 天气工具改用 wttr.in API：支持当前天气 + 未来 3 天预报，中文自动描述，体感温度
+
+### Fixed
+- 修复工具调用节点（toolNodes）退出重进后不显示（新增 migration 006 持久化到 SQLite）
+- 修复工具调用达 5 轮上限时直接报错，改为正常返回最后一轮内容
+
 ## [1.4.0] - 2026-04-29
 
 ### Added

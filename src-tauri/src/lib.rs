@@ -42,6 +42,12 @@ pub fn run() {
             sql: include_str!("../migrations/005_add_tool_calls.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 6,
+            description: "add tool_nodes to messages",
+            sql: include_str!("../migrations/006_add_tool_nodes.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

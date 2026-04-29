@@ -14,7 +14,7 @@ export function useAutoScroll(deps: React.DependencyList) {
   const isManualScrollingRef = useRef(false);
 
   // 依赖变化时自动滚动（仅当用户位于底部）
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+   
   useEffect(() => {
     if (isAtBottomRef.current) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
