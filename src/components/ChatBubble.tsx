@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
 import type { Message, ToolCallNode } from "../types";
 
@@ -79,24 +79,22 @@ export function ChatBubble({
               </span>
             </div>
             {reasoningExpanded && hasToolNodes && toolNodes.map((node, i) => (
-              <div key={i} className="chat-bubble__tool-node">
-                {node.reasoning && (
-                  <div className="chat-bubble__tool-node-reasoning">
-                    <MarkdownRenderer content={node.reasoning} />
+              <React.Fragment key={i}>
+                {node.reasoning && <MarkdownRenderer content={node.reasoning} />}
+                <div className="chat-bubble__tool-node">
+                  <div className={`chat-bubble__tool-node-status chat-bubble__tool-node-status--${node.toolStatus}`}>
+                    <span className="chat-bubble__tool-node-icon">
+                      {node.toolStatus === "executing" ? "◌" : node.toolStatus === "completed" ? "✓" : "✕"}
+                    </span>
+                    <span>调用工具: {node.toolName}</span>
+                    {node.toolStatus === "completed" && <span>· 完成</span>}
+                    {node.toolStatus === "failed" && <span>· 失败</span>}
                   </div>
-                )}
-                <div className={`chat-bubble__tool-node-status chat-bubble__tool-node-status--${node.toolStatus}`}>
-                  <span className="chat-bubble__tool-node-icon">
-                    {node.toolStatus === "executing" ? "◌" : node.toolStatus === "completed" ? "✓" : "✕"}
-                  </span>
-                  <span>调用工具: {node.toolName}</span>
-                  {node.toolStatus === "completed" && <span>· 完成</span>}
-                  {node.toolStatus === "failed" && <span>· 失败</span>}
+                  {extractToolUrls(node).map((url, j) => (
+                    <div key={j} className="chat-bubble__tool-node-url">{url}</div>
+                  ))}
                 </div>
-                {extractToolUrls(node).map((url, j) => (
-                  <div key={j} className="chat-bubble__tool-node-url">{url}</div>
-                ))}
-              </div>
+              </React.Fragment>
             ))}
             {reasoningExpanded && !hasToolNodes && (
               <div
@@ -108,36 +106,34 @@ export function ChatBubble({
             )}
           </div>
         )}
-        {isNonThinking && toolNodes.map((node, i) => (
-          <div key={i} className="chat-bubble__tool-node">
-            {node.reasoning && (
-              <div className="chat-bubble__content">
-                <MarkdownRenderer content={node.reasoning} />
-              </div>
-            )}
-            <div className={`chat-bubble__tool-node-status chat-bubble__tool-node-status--${node.toolStatus}`}>
-              <span className="chat-bubble__tool-node-icon">
-                {node.toolStatus === "executing" ? "◌" : node.toolStatus === "completed" ? "✓" : "✕"}
-              </span>
-              <span>调用工具: {node.toolName}</span>
-              {node.toolStatus === "completed" && <span>· 完成</span>}
-              {node.toolStatus === "failed" && <span>· 失败</span>}
-            </div>
-            {extractToolUrls(node).map((url, j) => (
-              <div key={j} className="chat-bubble__tool-node-url">{url}</div>
-            ))}
-          </div>
-        ))}
-        {isNonThinking && content && (
+        {isNonThinking && (
           <div
-            className={`chat-bubble__content ${showPreview ? "chat-bubble__content--preview" : ""}`}
+            className={`chat-bubble__content chat-bubble__content--with-tools ${showPreview ? "chat-bubble__content--preview" : ""}`}
             onClick={() => {
               if (showPreview && !isStreaming && onOpenReader) {
                 onOpenReader(message);
               }
             }}
           >
-            <MarkdownRenderer content={content} />
+            {toolNodes.map((node, i) => (
+              <React.Fragment key={i}>
+                {node.reasoning && <MarkdownRenderer content={node.reasoning} />}
+                <div className="chat-bubble__tool-node">
+                  <div className={`chat-bubble__tool-node-status chat-bubble__tool-node-status--${node.toolStatus}`}>
+                    <span className="chat-bubble__tool-node-icon">
+                      {node.toolStatus === "executing" ? "◌" : node.toolStatus === "completed" ? "✓" : "✕"}
+                    </span>
+                    <span>调用工具: {node.toolName}</span>
+                    {node.toolStatus === "completed" && <span>· 完成</span>}
+                    {node.toolStatus === "failed" && <span>· 失败</span>}
+                  </div>
+                  {extractToolUrls(node).map((url, j) => (
+                    <div key={j} className="chat-bubble__tool-node-url">{url}</div>
+                  ))}
+                </div>
+              </React.Fragment>
+            ))}
+            {content && <MarkdownRenderer content={content} />}
             {showPreview && (
               <div className="chat-bubble__preview-hint">
                 {isStreaming ? (
