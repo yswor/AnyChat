@@ -1,9 +1,10 @@
 import { create } from "zustand";
-import type { Conversation, Message, StreamChunk, ToolCallInfo, ToolCallNode } from "../types";
+import type { Conversation, Message, StreamChunk, ToolCallNode } from "../types";
 import { invoke } from "@tauri-apps/api/core";
 import { getDb } from "../db";
-import { DEFAULT_REASONING_EFFORT } from "../constants/defaults";
 import { v4 as uuidv4 } from "uuid";
+import { normalizeConversation, normalizeMessage } from "./chatNormalizers";
+import { buildApiMessages } from "./chatApi";
 
 interface ChatState {
   conversations: Conversation[];
@@ -78,71 +79,6 @@ function resetActiveStream() {
 
 function emptyStreamState() {
   return { content: "", reasoning: "", isStreaming: false, error: null, toolCallNodes: [] as ToolCallNode[], reasoningCursor: 0 };
-}
-
-type ApiMessage = { role: string; content: string; reasoning_content?: string; tool_calls?: ToolCallInfo[]; tool_call_id?: string };
-
-function tryParseJson<T>(raw: unknown, fallback: T): T {
-  if (!raw) return fallback;
-  try {
-    return (typeof raw === "string" ? JSON.parse(raw) : raw) as T;
-  } catch {
-    return fallback;
-  }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizeConversation(row: any): Conversation {
-  return {
-    id: row.id,
-    title: row.title || undefined,
-    provider_id: row.provider_id,
-    model: row.model,
-    temperature: Number(row.temperature),
-    max_tokens: Number(row.max_tokens),
-    top_p: Number(row.top_p),
-    frequency_penalty: Number(row.frequency_penalty ?? 0),
-    presence_penalty: Number(row.presence_penalty ?? 0),
-    system_prompt: row.system_prompt || "",
-    thinking_enabled: Boolean(row.thinking_enabled),
-    reasoning_effort: row.reasoning_effort || DEFAULT_REASONING_EFFORT,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  };
-}
-
-function reconstructContent(displayContent: string, attachmentData: string): string {
-  // displayContent: "[文件: name (size)]\n\nuser text" or just "[文件: name (size)]"
-  // attachmentData: the raw file text
-  const nlIdx = displayContent.indexOf("\n\n");
-  const header = nlIdx >= 0 ? displayContent.slice(0, nlIdx) : displayContent;
-  const body = nlIdx >= 0 ? displayContent.slice(nlIdx + 2) : "";
-  return body
-    ? `${header}\n\n${attachmentData}\n\n---\n${body}`
-    : `${header}\n\n${attachmentData}`;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizeMessage(row: any): Message {
-  const usageDetails = tryParseJson<Message["usage_details"]>(row.usage_details, undefined);
-  const toolCalls = tryParseJson<Message["tool_calls"]>(row.tool_calls, undefined);
-  const toolNodes = tryParseJson<Message["toolNodes"]>(row.tool_nodes, undefined);
-  return {
-    id: row.id,
-    conversation_id: row.conversation_id,
-    role: row.role,
-    content: row.content,
-    reasoning_content: row.reasoning_content || undefined,
-    attachment_type: row.attachment_type || undefined,
-    attachment_data: row.attachment_data || undefined,
-    tokens: row.tokens != null ? Number(row.tokens) : undefined,
-    usage_details: usageDetails,
-    provider_id: row.provider_id || undefined,
-    tool_call_id: row.tool_call_id || undefined,
-    tool_calls: toolCalls,
-    toolNodes,
-    created_at: row.created_at,
-  };
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -423,28 +359,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     // Build API messages — use original `content` for the user message with displayContent
-    const apiMessages: ApiMessage[] = [];
-    if (conv.system_prompt) {
-      apiMessages.push({ role: "system", content: conv.system_prompt });
-    }
-    for (const msg of newMessages) {
-      const m: ApiMessage = {
-        role: msg.role,
-        content: (displayContent != null && msg.id === displayUserMsgId)
-          ? content
-          : (msg.attachment_data ? reconstructContent(msg.content, msg.attachment_data) : msg.content),
-      };
-      if (msg.reasoning_content) {
-        m.reasoning_content = msg.reasoning_content;
-      }
-      if (msg.tool_calls) {
-        m.tool_calls = msg.tool_calls;
-      }
-      if (msg.tool_call_id) {
-        m.tool_call_id = msg.tool_call_id;
-      }
-      apiMessages.push(m);
-    }
+    const apiMessages = buildApiMessages(conv, newMessages, content, displayUserMsgId);
 
     const assistantMsgId = uuidv4();
     const assistantMsg: Message = {
