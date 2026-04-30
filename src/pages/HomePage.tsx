@@ -70,13 +70,13 @@ export function HomePage() {
           "SELECT id FROM conversations WHERE id NOT IN (SELECT DISTINCT conversation_id FROM messages) ORDER BY updated_at DESC LIMIT 1",
         );
         if (rows.length > 0) {
-          navigate(`/chat/${rows[0].id}`);
+          navigate(`/chat/${rows[0].id}`, { replace: true });
           return;
         }
       } catch { /* fall through to create new */ }
 
       const id = await createConversation(activeProvider.id, defaultModel, DEFAULT_CONVERSATION_PARAMS);
-      navigate(`/chat/${id}`);
+      navigate(`/chat/${id}`, { replace: true });
     } catch (err) {
       console.error("Failed to create conversation:", err);
       alert(`创建对话失败: ${err}`);

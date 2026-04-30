@@ -240,13 +240,13 @@ export function ProviderEditPage() {
     }
 
     await loadProviders();
-    navigate("/settings");
+    navigate("/settings", { replace: true });
   };
 
   const handleDelete = async () => {
     if (!id) return;
     removeProvider(id);
-    navigate("/settings");
+    navigate("/settings", { replace: true });
   };
 
   return (

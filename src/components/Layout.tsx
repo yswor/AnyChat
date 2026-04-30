@@ -34,9 +34,9 @@ export function Layout({ children }: LayoutProps) {
   const goHome = useCallback(() => {
     if (conversations.length > 0) {
       const last = conversations[0];
-      navigate(`/chat/${last.id}`);
+      navigate(`/chat/${last.id}`, { replace: true });
     } else {
-      navigate("/");
+      navigate("/", { replace: true });
     }
   }, [conversations, navigate]);
 

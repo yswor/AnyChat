@@ -73,14 +73,14 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
         );
         if (rows.length > 0) {
           onClose();
-          navigate(`/chat/${rows[0].id}`);
+          navigate(`/chat/${rows[0].id}`, { replace: true });
           return;
         }
       } catch { /* fall through to create new */ }
 
       const id = await createConversation(provider.id, defaultModel, DEFAULT_CONVERSATION_PARAMS);
       onClose();
-      navigate(`/chat/${id}`);
+      navigate(`/chat/${id}`, { replace: true });
       loadConversations();
     } catch (err) {
       console.error("Failed to create conversation:", err);
