@@ -15,10 +15,13 @@ import {
   IconAttach,
   IconReader,
   IconSettings,
+  IconGear,
+  IconArrowDown,
 } from "../components/Icons";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import { useFileAttachment } from "../hooks/useFileAttachment";
 import { useWebViewFetchFallback } from "../hooks/useWebViewFetchFallback";
+import { useReaderMode } from "../hooks/useReaderMode";
 import type { Conversation, Message } from "../types";
 
 function isVisibleMessage(m: Message) {
@@ -40,12 +43,9 @@ export function ChatPage() {
   const [input, setInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
   const handleCloseSettings = useCallback(() => setShowSettings(false), []);
-  const [readerMode, setReaderMode] = useState(false);
-  const [readerMessage, setReaderMessage] = useState<Message | null>(null);
   const [isStreamingLocal, setIsStreamingLocal] = useState(false);
   const [showProviderSwitcher, setShowProviderSwitcher] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const readerScrollTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
   const {
     conversations,
@@ -85,6 +85,14 @@ export function ChatPage() {
 
   useWebViewFetchFallback();
 
+  const {
+    readerMode,
+    readerMessage,
+    toggleReaderMode,
+    handleOpenReader,
+    handleCloseReader,
+  } = useReaderMode(id, messagesEndRef);
+
   const conv: Conversation | undefined = conversations.find(
     (c) => c.id === id,
   );
@@ -114,14 +122,6 @@ export function ChatPage() {
     };
     window.addEventListener("shared-text", handleSharedText);
     return () => window.removeEventListener("shared-text", handleSharedText);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (readerScrollTimerRef.current) {
-        clearTimeout(readerScrollTimerRef.current);
-      }
-    };
   }, []);
 
   // ---- Handlers ----
@@ -200,28 +200,6 @@ export function ChatPage() {
       reasoning_effort: params.reasoningEffort,
     } as Partial<Conversation>);
   };
-
-  const toggleReaderMode = useCallback(() => {
-    const next = !readerMode;
-    setReaderMode(next);
-    if (id) {
-      localStorage.setItem(`readerMode_${id}`, String(next));
-    }
-    if (readerScrollTimerRef.current) {
-      clearTimeout(readerScrollTimerRef.current);
-    }
-    readerScrollTimerRef.current = setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 100);
-  }, [readerMode, id, messagesEndRef]);
-
-  const handleOpenReader = useCallback((msg: Message) => {
-    setReaderMessage(msg);
-  }, []);
-
-  const handleCloseReader = useCallback(() => {
-    setReaderMessage(null);
-  }, []);
 
   const handleDelete = useCallback(
     async (msgIndex: number) => {
@@ -329,19 +307,7 @@ export function ChatPage() {
               onClick={scrollToBottom}
               title="滚动到底部"
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <polyline points="19 12 12 19 5 12" />
-              </svg>
+              <IconArrowDown size={14} />
             </button>
           </div>
         )}
@@ -374,10 +340,7 @@ export function ChatPage() {
               disabled={isBusy}
               title="切换供应商"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="3"/>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
-              </svg>
+              <IconGear size={16} />
             </button>
           )}
           <button

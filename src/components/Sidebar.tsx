@@ -3,7 +3,7 @@ import { useChatStore } from "../stores/chatStore";
 import { useProviderStore } from "../stores/providerStore";
 import { IconGear, IconClose } from "./Icons";
 import { getDb } from "../db";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback } from "react";
 import { useBackHandler } from "../hooks/useBackHandler";
 import { DEFAULT_CONVERSATION_PARAMS } from "../constants/defaults";
 import type { Conversation } from "../types";
@@ -24,10 +24,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const activeProvider = providers.find((p) => p.id === activeProviderId);
-
-  useEffect(() => {
-    loadConversations();
-  }, [loadConversations]);
 
   const clearLongPress = useCallback(() => {
     if (longPressTimer.current) {

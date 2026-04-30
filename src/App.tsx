@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { useEffect } from "react";
 import { Layout } from "./components/Layout";
 import { HomePage } from "./pages/HomePage";
 import { ChatPage } from "./pages/ChatPage";
@@ -7,9 +8,8 @@ import { ProviderEditPage } from "./pages/ProviderEditPage";
 import { initTheme } from "./stores/themeStore";
 import "./App.css";
 
-initTheme();
-
 export function App() {
+  useEffect(() => { initTheme(); }, []);
   return (
     <BrowserRouter>
       <div className="app-container">
