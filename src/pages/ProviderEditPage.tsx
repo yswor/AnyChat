@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useProviderStore } from "../stores/providerStore";
 import { invoke } from "@tauri-apps/api/core";
 import { v4 as uuidv4 } from "uuid";
-import Database from "@tauri-apps/plugin-sql";
+import { getDb } from "../db";
 import { PROVIDER_TEMPLATES, type ModelInfo } from "../types";
 import { IconClose } from "../components/Icons";
 import { ConfirmDialog } from "../components/ConfirmDialog";
@@ -129,7 +129,7 @@ export function ProviderEditPage() {
     }
 
     if (isNew) {
-      const d = await Database.load("sqlite:anychat.db");
+      const d = await getDb();
       const providerId = uuidv4();
       const now = new Date().toISOString();
 
@@ -177,7 +177,7 @@ export function ProviderEditPage() {
         updated_at: now,
       });
     } else if (id) {
-      const d = await Database.load("sqlite:anychat.db");
+      const d = await getDb();
 
       let encryptedKey: string | null = null;
       if (apiKey.trim()) {

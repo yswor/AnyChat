@@ -56,7 +56,6 @@ export function ChatPage() {
     updateConversation,
     setCurrentConversation,
     streamChat,
-    deleteMessage,
     switchConversationProvider,
   } = useChatStore();
 
@@ -97,18 +96,13 @@ export function ChatPage() {
     if (id) {
       setCurrentConversation(id);
       loadMessages(id);
+      setShowSettings(false);
     }
   }, [id, loadMessages, setCurrentConversation]);
 
   useEffect(() => {
     loadConversations();
   }, [loadConversations]);
-
-  useEffect(() => {
-    if (id) {
-      setShowSettings(false);
-    }
-  }, [id]);
 
   useEffect(() => {
     const handleSharedText = (e: Event) => {
@@ -231,11 +225,12 @@ export function ChatPage() {
 
   const handleDelete = useCallback(
     async (msgIndex: number) => {
-      const msg = messages[msgIndex];
+      const msg = useChatStore.getState().messages[msgIndex];
       if (!msg) return;
+      const { deleteMessage } = useChatStore.getState();
       await deleteMessage(msg.id);
     },
-    [messages, deleteMessage],
+    [],
   );
 
   const handleSwitchProvider = useCallback(
@@ -252,8 +247,9 @@ export function ChatPage() {
 
   /** @fix 边界情况：当 msgIndex=0 时无前驱 user 消息，静默返回 →
    *  改为带警告的提前退出 */
-  const handleRegenerate = async (msgIndex: number) => {
+  const handleRegenerate = useCallback(async (msgIndex: number) => {
     if (!id || isBusy) return;
+    const { messages, deleteMessage, setCurrentConversation, streamChat, loadConversations } = useChatStore.getState();
     let userMsgIdx = -1;
     for (let i = msgIndex - 1; i >= 0; i--) {
       if (messages[i]?.role === "user") {
@@ -262,10 +258,7 @@ export function ChatPage() {
       }
     }
     if (userMsgIdx === -1) {
-      console.warn(
-        "handleRegenerate: no preceding user message found for msgIndex",
-        msgIndex,
-      );
+      console.warn("handleRegenerate: no preceding user message found for msgIndex", msgIndex);
       return;
     }
 
@@ -277,7 +270,7 @@ export function ChatPage() {
     await streamChat(messages[userMsgIdx].content, true);
     setIsStreamingLocal(false);
     loadConversations();
-  };
+  }, [id, isBusy]);
 
   if (!id) {
     navigate("/");

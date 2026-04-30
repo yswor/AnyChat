@@ -2,7 +2,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useChatStore } from "../stores/chatStore";
 import { useProviderStore } from "../stores/providerStore";
 import { IconGear, IconClose } from "./Icons";
-import Database from "@tauri-apps/plugin-sql";
+import { getDb } from "../db";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useBackHandler } from "../hooks/useBackHandler";
 import { DEFAULT_CONVERSATION_PARAMS } from "../constants/defaults";
@@ -70,7 +70,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       }
 
       // Reuse existing empty conversation if one exists
-      const db = await Database.load("sqlite:anychat.db");
+      const db = await getDb();
       try {
         const rows: { id: string }[] = await db.select(
           "SELECT id FROM conversations WHERE id NOT IN (SELECT DISTINCT conversation_id FROM messages) ORDER BY updated_at DESC LIMIT 1",
@@ -88,7 +88,6 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       loadConversations();
     } catch (err) {
       console.error("Failed to create conversation:", err);
-      alert(`创建对话失败: ${err}`);
     }
   };
 

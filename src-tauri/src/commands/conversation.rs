@@ -23,7 +23,8 @@ pub struct StreamChatInput {
 
 #[tauri::command]
 pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Result<String, String> {
-    let api_key = store::decrypt_api_key(&input.api_key).unwrap_or(input.api_key);
+    let api_key = store::decrypt_api_key(&input.api_key)
+        .map_err(|e| format!("API Key 解密失败，请重新输入 API Key: {}", e))?;
 
     let params = super::message::StreamChatParams {
         base_url: input.base_url,

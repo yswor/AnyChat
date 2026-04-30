@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { Provider, BalanceInfo } from "../types";
 import { PROVIDER_TEMPLATES } from "../types";
-import Database from "@tauri-apps/plugin-sql";
+import { getDb } from "../db";
 import { invoke } from "@tauri-apps/api/core";
 
 interface ProviderState {
@@ -17,15 +17,6 @@ interface ProviderState {
   getActiveProvider: () => Provider | undefined;
   loadProviders: () => Promise<void>;
   fetchBalance: (providerId: string) => Promise<void>;
-}
-
-let providerDb: Database | null = null;
-
-async function getProviderDb(): Promise<Database> {
-  if (!providerDb) {
-    providerDb = await Database.load("sqlite:anychat.db");
-  }
-  return providerDb;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -105,14 +96,14 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       ),
     })),
 
-  removeProvider: (id) => {
-    (async () => {
-      try {
-        const d = await getProviderDb();
-        await d.execute("UPDATE conversations SET provider_id = NULL WHERE provider_id = $1", [id]);
-        await d.execute("DELETE FROM providers WHERE id = $1", [id]);
-      } catch { /* best effort */ }
-    })();
+  removeProvider: async (id) => {
+    try {
+      const d = await getDb();
+      await d.execute("UPDATE conversations SET provider_id = NULL WHERE provider_id = $1", [id]);
+      await d.execute("DELETE FROM providers WHERE id = $1", [id]);
+    } catch (err) {
+      console.warn("[providerStore] Failed to delete provider from DB:", err);
+    }
     set((state) => ({
       providers: state.providers.filter((p) => p.id !== id),
       activeProviderId:
@@ -126,7 +117,7 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
   },
 
   loadProviders: async () => {
-    const d = await getProviderDb();
+    const d = await getDb();
     set({ loading: true });
     try {
       const rows: unknown[] = await d.select(

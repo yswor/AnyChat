@@ -1,15 +1,7 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
+import { ToolNodeDisplay } from "./ToolNodeDisplay";
 import type { Message, ToolCallNode } from "../types";
-
-function extractToolUrls(node: ToolCallNode): string[] {
-  if (node.toolName !== "webfetch" || !node.arguments) return [];
-  try {
-    const parsed = JSON.parse(node.arguments);
-    const urls: string[] = parsed.urls || (parsed.url ? [parsed.url] : []);
-    return urls.slice(0, 5);
-  } catch { return []; }
-}
 
 interface ChatBubbleProps {
   message: Message;
@@ -81,22 +73,7 @@ export function ChatBubble({
             {reasoningExpanded && hasToolNodes && (
               <div className="chat-bubble__reasoning-content" onClick={() => setReasoningExpanded(false)}>
                 {toolNodes.map((node, i) => (
-                  <React.Fragment key={i}>
-                    {node.reasoning && <MarkdownRenderer content={node.reasoning} />}
-                    <div className="chat-bubble__tool-node">
-                      <div className={`chat-bubble__tool-node-status chat-bubble__tool-node-status--${node.toolStatus}`}>
-                        <span className="chat-bubble__tool-node-icon">
-                          {node.toolStatus === "executing" ? "◌" : node.toolStatus === "completed" ? "✓" : "✕"}
-                        </span>
-                        <span>调用工具: {node.toolName}</span>
-                        {node.toolStatus === "completed" && <span>· 完成</span>}
-                        {node.toolStatus === "failed" && <span>· 失败</span>}
-                      </div>
-                      {extractToolUrls(node).map((url, j) => (
-                        <div key={j} className="chat-bubble__tool-node-url">{url}</div>
-                      ))}
-                    </div>
-                  </React.Fragment>
+                  <ToolNodeDisplay key={i} node={node} />
                 ))}
               </div>
             )}
@@ -120,22 +97,7 @@ export function ChatBubble({
             }}
           >
             {toolNodes.map((node, i) => (
-              <React.Fragment key={i}>
-                {node.reasoning && <MarkdownRenderer content={node.reasoning} />}
-                <div className="chat-bubble__tool-node">
-                  <div className={`chat-bubble__tool-node-status chat-bubble__tool-node-status--${node.toolStatus}`}>
-                    <span className="chat-bubble__tool-node-icon">
-                      {node.toolStatus === "executing" ? "◌" : node.toolStatus === "completed" ? "✓" : "✕"}
-                    </span>
-                    <span>调用工具: {node.toolName}</span>
-                    {node.toolStatus === "completed" && <span>· 完成</span>}
-                    {node.toolStatus === "failed" && <span>· 失败</span>}
-                  </div>
-                  {extractToolUrls(node).map((url, j) => (
-                    <div key={j} className="chat-bubble__tool-node-url">{url}</div>
-                  ))}
-                </div>
-              </React.Fragment>
+              <ToolNodeDisplay key={i} node={node} />
             ))}
             {content && <MarkdownRenderer content={content} />}
             {showPreview && (

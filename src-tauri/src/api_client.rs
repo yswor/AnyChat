@@ -1,5 +1,19 @@
 use crate::error::AppError;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
+
+static SHARED_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .tcp_keepalive(Some(std::time::Duration::from_secs(30)))
+        .pool_idle_timeout(Some(std::time::Duration::from_secs(90)))
+        .build()
+        .expect("Failed to create shared HTTP client")
+});
+
+pub fn http_client() -> reqwest::Client {
+    SHARED_CLIENT.clone()
+}
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ModelInfo {
@@ -21,12 +35,7 @@ pub async fn fetch_models(base_url: &str, api_key: &str) -> Result<Vec<ModelInfo
         format!("{}/models", base_url)
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| AppError::Http(format!("Failed to create HTTP client: {}", e)))?;
-
-    let resp = client
+    let resp = http_client()
         .get(&url)
         .header("Authorization", format!("Bearer {}", api_key))
         .send()
@@ -109,12 +118,7 @@ pub async fn fetch_balance(
         format!("{}/{}", base_url, balance_path.trim_start_matches('/'))
     };
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| AppError::Http(format!("Failed to create HTTP client: {}", e)))?;
-
-    let resp = client
+    let resp = http_client()
         .get(&url)
         .header("Authorization", format!("Bearer {}", api_key))
         .send()

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { Conversation, Message, StreamChunk, ToolCallInfo, ToolCallNode } from "../types";
 import { invoke } from "@tauri-apps/api/core";
-import Database from "@tauri-apps/plugin-sql";
+import { getDb } from "../db";
 import { DEFAULT_REASONING_EFFORT } from "../constants/defaults";
 import { v4 as uuidv4 } from "uuid";
 
@@ -15,6 +15,7 @@ interface ChatState {
     isStreaming: boolean;
     error: string | null;
     toolCallNodes: ToolCallNode[];
+    reasoningCursor: number;
   };
   loading: boolean;
 
@@ -56,7 +57,15 @@ interface ChatState {
   getProviderTokens: (providerId: string) => Promise<number>;
 }
 
-let db: Database | null = null;
+const STREAM_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
+function invokeWithTimeout<ResultT>(cmd: string, args: Record<string, unknown>): Promise<ResultT> {
+  return Promise.race([
+    invoke<ResultT>(cmd, args),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("请求超时")), STREAM_TIMEOUT_MS)),
+  ]);
+}
+
 let activeUnlisten: (() => void) | null = null;
 
 function resetActiveStream() {
@@ -68,7 +77,7 @@ function resetActiveStream() {
 }
 
 function emptyStreamState() {
-  return { content: "", reasoning: "", isStreaming: false, error: null, toolCallNodes: [] as ToolCallNode[] };
+  return { content: "", reasoning: "", isStreaming: false, error: null, toolCallNodes: [] as ToolCallNode[], reasoningCursor: 0 };
 }
 
 type ApiMessage = { role: string; content: string; reasoning_content?: string; tool_calls?: ToolCallInfo[]; tool_call_id?: string };
@@ -80,13 +89,6 @@ function tryParseJson<T>(raw: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
-}
-
-async function getDb(): Promise<Database> {
-  if (!db) {
-    db = await Database.load("sqlite:anychat.db");
-  }
-  return db;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -157,18 +159,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         "SELECT id, title, provider_id, model, temperature, max_tokens, top_p, frequency_penalty, presence_penalty, system_prompt, thinking_enabled, reasoning_effort, created_at, updated_at FROM conversations ORDER BY updated_at DESC",
       );
       set({ conversations: rows.map(normalizeConversation) });
-    } catch {
-      // Retry after ensuring schema columns exist
-      try {
-        await d.execute("ALTER TABLE conversations ADD COLUMN frequency_penalty REAL NOT NULL DEFAULT 0.0");
-      } catch { /* already exists */ }
-      try {
-        await d.execute("ALTER TABLE conversations ADD COLUMN presence_penalty REAL NOT NULL DEFAULT 0.0");
-      } catch { /* already exists */ }
-      const rows: unknown[] = await d.select(
-        "SELECT id, title, provider_id, model, temperature, max_tokens, top_p, frequency_penalty, presence_penalty, system_prompt, thinking_enabled, reasoning_effort, created_at, updated_at FROM conversations ORDER BY updated_at DESC",
-      );
-      set({ conversations: rows.map(normalizeConversation) });
+    } catch (err) {
+      console.warn("[chatStore] loadConversations failed:", err);
     }
   },
 
@@ -209,17 +201,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (err) {
       const errorStr = String(err);
       if (errorStr.includes("no column named frequency_penalty") || errorStr.includes("no column named presence_penalty")) {
-        // Migration didn't run, add columns manually
-        try {
-          await d.execute("ALTER TABLE conversations ADD COLUMN frequency_penalty REAL NOT NULL DEFAULT 0.0");
-        } catch {
-          // Column may already exist
-        }
-        try {
-          await d.execute("ALTER TABLE conversations ADD COLUMN presence_penalty REAL NOT NULL DEFAULT 0.0");
-        } catch {
-          // Column may already exist
-        }
+        console.warn("[chatStore] Missing columns, migrations may not have run:", errorStr);
         // Retry insert
         await d.execute(
           `INSERT INTO conversations (id, provider_id, model, temperature, max_tokens, top_p, frequency_penalty, presence_penalty, system_prompt, thinking_enabled, reasoning_effort, created_at, updated_at)
@@ -397,7 +379,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         thinkingSwitchKey = tp.switch;
         thinkingEffortKey = tp.effort;
       }
-    } catch { /* ignore parse errors */ }
+    } catch { /* ignore - use defaults */ }
 
     const now = new Date().toISOString();
     let newMessages = messages;
@@ -425,14 +407,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
           [userMsgId, currentConversationId, "user", displayUserContent, attachment?.type ?? null, attachment?.data ?? null, conv.provider_id, now],
         );
-      } catch {
-        try { await d.execute("ALTER TABLE messages ADD COLUMN provider_id TEXT"); } catch { /* ok */ }
-        try { await d.execute("ALTER TABLE messages ADD COLUMN usage_details TEXT"); } catch { /* ok */ }
-        await d.execute(
-          `INSERT INTO messages (id, conversation_id, role, content, attachment_type, attachment_data, provider_id, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [userMsgId, currentConversationId, "user", displayUserContent, attachment?.type ?? null, attachment?.data ?? null, conv.provider_id, now],
-        );
+      } catch (err) {
+        console.warn("[chatStore] Failed to insert user message:", err);
       }
 
       await d.execute(
@@ -441,9 +417,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       );
 
       newMessages = [...messages, userMsg];
-      set({ messages: newMessages, streamState: { content: "", reasoning: "", isStreaming: true, error: null, toolCallNodes: [] } });
+      set({ messages: newMessages, streamState: { content: "", reasoning: "", isStreaming: true, error: null, toolCallNodes: [], reasoningCursor: 0 } });
     } else {
-      set({ streamState: { content: "", reasoning: "", isStreaming: true, error: null, toolCallNodes: [] } });
+      set({ streamState: { content: "", reasoning: "", isStreaming: true, error: null, toolCallNodes: [], reasoningCursor: 0 } });
     }
 
     // Build API messages — use original `content` for the user message with displayContent
@@ -488,13 +464,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [assistantMsgId, currentConversationId, "assistant", "", conv.provider_id, now],
       );
-    } catch {
-      try { await d.execute("ALTER TABLE messages ADD COLUMN provider_id TEXT"); } catch { /* ok */ }
-      await d.execute(
-        `INSERT INTO messages (id, conversation_id, role, content, provider_id, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [assistantMsgId, currentConversationId, "assistant", "", conv.provider_id, now],
-      );
+    } catch (err) {
+      console.warn("[chatStore] Failed to insert assistant message:", err);
     }
 
     // Clean up any previously active stream before starting a new one
@@ -531,25 +502,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
                   [intermediateId, currentConversationId, "assistant", snapshotContent, snapshotReasoning || null, JSON.stringify([{ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.arguments } }]), conv.provider_id, now],
                 );
-              } catch (insertErr) {
-                const errMsg = String(insertErr);
-                if (errMsg.includes("no column named tool_calls")) {
-                  const d = await getDb();
-                  try { await d.execute("ALTER TABLE messages ADD COLUMN tool_calls TEXT"); } catch { /* ok */ }
-                  const now = new Date().toISOString();
-                  const intermediateId = uuidv4();
-                  await d.execute(
-                    `INSERT INTO messages (id, conversation_id, role, content, reasoning_content, tool_calls, provider_id, created_at)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                    [intermediateId, currentConversationId, "assistant", snapshotContent, snapshotReasoning || null, JSON.stringify([{ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.arguments } }]), conv.provider_id, now],
-                  );
-                }
+              } catch (err) {
+                console.warn("[chatStore] Failed to insert intermediate tool message:", err);
               }
             })();
             set((s) => {
               const nodeText = snapshotReasoning || snapshotContent;
-              const prevLen = s.streamState.toolCallNodes.reduce((sum, n) => sum + n.reasoning.length, 0);
-              const nodeReasoning = prevLen > 0 ? nodeText.slice(prevLen) : nodeText;
+              const cursor = s.streamState.reasoningCursor;
+              const nodeReasoning = nodeText.slice(cursor);
               return {
                 streamState: {
                   ...s.streamState,
@@ -561,6 +521,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                     toolStatus: "executing",
                     mode: snapshotReasoning ? "thinking" : "non-thinking",
                   }],
+                  reasoningCursor: cursor + nodeReasoning.length,
                 },
               };
             });
@@ -576,7 +537,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                    VALUES ($1, $2, $3, $4, $5, $6, $7)`,
                   [resultId, currentConversationId, "tool", tc.result || "", tc.id, conv.provider_id, now],
                 );
-              } catch { /* ignore — tool result is supplementary */ }
+              } catch (err) { console.warn("[chatStore] Failed to save tool result:", err); }
             })();
             set((s) => ({
               streamState: {
@@ -638,7 +599,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       activeUnlisten = () => { unlisten(); activeUnlisten = null; };
 
-      const finalContent = await invoke<string>("stream_chat", {
+      const finalContent = await invokeWithTimeout<string>("stream_chat", {
         input: {
           conversation_id: currentConversationId,
           base_url: rawProv.base_url,
@@ -678,20 +639,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
             assistantMsgId,
           ],
         );
-      } catch {
-        try { await d.execute("ALTER TABLE messages ADD COLUMN usage_details TEXT"); } catch { /* ok */ }
-        try { await d.execute("ALTER TABLE messages ADD COLUMN tool_nodes TEXT"); } catch { /* ok */ }
-        await d.execute(
-          `UPDATE messages SET content = $1, reasoning_content = $2, tokens = $3, usage_details = $4, tool_nodes = $5 WHERE id = $6`,
-          [
-            finalContent,
-            finalReasoning || null,
-            totalTokens ?? null,
-            usageDetails ? JSON.stringify(usageDetails) : null,
-            toolNodesJson,
-            assistantMsgId,
-          ],
-        );
+      } catch (err) {
+        console.warn("[chatStore] Failed to update assistant message:", err);
       }
 
       unlisten();

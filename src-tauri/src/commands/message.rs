@@ -154,37 +154,6 @@ fn build_body(
                     "required": ["urls"]
                 }
             }
-        }]),
-    );
-
-    body.insert(
-        "tools".to_string(),
-        serde_json::json!([{
-            "type": "function",
-            "function": {
-                "name": "webfetch",
-                "description": "获取指定 URL 的网页内容，支持多种输出格式",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "urls": {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "description": "要获取内容的 URL 列表（最多 5 个），每个必须是完整的 http:// 或 https:// 链接"
-                        },
-                        "format": {
-                            "type": "string",
-                            "enum": ["markdown", "text", "html"],
-                            "description": "返回内容的格式。markdown（默认，HTML自动转为Markdown）、text（纯文本，剥离HTML标签）、html（原始HTML）"
-                        },
-                        "timeout": {
-                            "type": "number",
-                            "description": "请求超时时间（秒），默认30秒，最大120秒"
-                        }
-                    },
-                    "required": ["urls"]
-                }
-            }
         }, {
             "type": "function",
             "function": {
@@ -287,27 +256,90 @@ async fn do_sse_request(
         model
     );
 
-    let body_str = serde_json::to_string(body).unwrap_or_default();
+    let body_str = serde_json::to_string(body)
+        .map_err(|e| AppError::InvalidInput(format!("Failed to serialize request body: {}", e)))?;
     tracing::info!(
         "[sse] REQUEST body ({} bytes): {}",
         body_str.len(),
         body_str
     );
 
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(30))
-        .tcp_keepalive(Some(std::time::Duration::from_secs(30)))
-        .pool_idle_timeout(Some(std::time::Duration::from_secs(90)))
-        .build()
-        .map_err(|e| AppError::Http(format!("Failed to create client: {}", e)))?;
+    let client = crate::api_client::http_client();
 
+    let mut last_error: Option<AppError> = None;
+    let max_retries = 2;
+
+    for attempt in 0..=max_retries {
+        if attempt > 0 {
+            tracing::info!(
+                "[sse] Retry attempt {}/{} for conversation {}",
+                attempt,
+                max_retries,
+                conversation_id
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+        }
+
+        let result = send_sse_request(
+            &client,
+            url,
+            api_key,
+            body_str.clone(),
+            first_byte_timeout,
+            read_timeout,
+            app,
+            conversation_id,
+        )
+        .await;
+
+        match result {
+            Ok(sse_result) => return Ok(sse_result),
+            Err(err) => {
+                let is_retryable = match &err {
+                    AppError::Http(msg) => {
+                        // Don't retry 4xx errors (auth, rate limit, bad request)
+                        !msg.starts_with("API error 4")
+                    }
+                    _ => true, // timeout / connection / stream errors are retryable
+                };
+
+                if !is_retryable {
+                    tracing::warn!("[sse] Non-retryable error, giving up: {}", err);
+                    return Err(err);
+                }
+
+                tracing::warn!(
+                    "[sse] Retryable error (attempt {}/{}): {}",
+                    attempt + 1,
+                    max_retries,
+                    err
+                );
+                last_error = Some(err);
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or(AppError::Stream("Request failed after retries".into())))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn send_sse_request(
+    client: &reqwest::Client,
+    url: &str,
+    api_key: &str,
+    body_str: String,
+    first_byte_timeout: std::time::Duration,
+    read_timeout: std::time::Duration,
+    app: &tauri::AppHandle,
+    conversation_id: &str,
+) -> Result<SseResult, AppError> {
     let response = tokio::time::timeout(
         first_byte_timeout,
         client
             .post(url)
             .header("Authorization", format!("Bearer {}", api_key))
             .header("Content-Type", "application/json")
-            .body(body_str.clone())
+            .body(body_str)
             .send(),
     )
     .await
@@ -577,13 +609,14 @@ async fn execute_tool(name: &str, args: &serde_json::Value, app: &tauri::AppHand
             if location.is_empty() {
                 return "错误: 未提供城市名称".to_string();
             }
-            let client = reqwest::Client::new();
+            let client = crate::api_client::http_client();
             let encoded = urlencoding::encode(location);
             let weather_url = format!("https://wttr.in/{}?format=j1&lang=zh", encoded);
 
             let w_json: serde_json::Value = match client
                 .get(&weather_url)
                 .header("User-Agent", "AnyChat/1.0")
+                .timeout(std::time::Duration::from_secs(15))
                 .send()
                 .await
             {
