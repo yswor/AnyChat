@@ -105,12 +105,20 @@ export const useProviderStore = create<ProviderState>((set, get) => ({
       ),
     })),
 
-  removeProvider: (id) =>
+  removeProvider: (id) => {
+    (async () => {
+      try {
+        const d = await getProviderDb();
+        await d.execute("UPDATE conversations SET provider_id = NULL WHERE provider_id = $1", [id]);
+        await d.execute("DELETE FROM providers WHERE id = $1", [id]);
+      } catch { /* best effort */ }
+    })();
     set((state) => ({
       providers: state.providers.filter((p) => p.id !== id),
       activeProviderId:
         state.activeProviderId === id ? null : state.activeProviderId,
-    })),
+    }));
+  },
 
   getActiveProvider: () => {
     const { providers, activeProviderId } = get();

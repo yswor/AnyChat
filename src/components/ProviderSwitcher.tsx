@@ -1,5 +1,6 @@
 import { useProviderStore } from "../stores/providerStore";
 import { IconClose } from "./Icons";
+import { useBackHandler } from "../hooks/useBackHandler";
 
 interface ProviderSwitcherProps {
   currentProviderId: string | null;
@@ -13,6 +14,7 @@ export function ProviderSwitcher({
   onClose,
 }: ProviderSwitcherProps) {
   const { providers } = useProviderStore();
+  useBackHandler(onClose, true);
 
   return (
     <div className="provider-switcher-overlay" onClick={onClose}>

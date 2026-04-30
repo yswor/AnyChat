@@ -58,12 +58,28 @@ pnpm tauri android dev --open
 - 错误处理统一用 `thiserror` 自定义错误类型，不要使用 `unwrap()` 在核心逻辑
 - 使用 `tracing` 替代 `println!` 调试
 
+### SQLite 迁移（Migration）
+- 新增 `CREATE TABLE` 或列变更优先用 `ALTER TABLE ADD COLUMN`，非必要不走重建表
+- **重建表（DROP + RENAME）时必须遵循：**
+  - 新表列顺序必须与源表完全一致（对照所有历史 migration 的列定义逐列核对，包括早前的 `ALTER TABLE ADD COLUMN` 追加列）
+  - `INSERT INTO` 必须使用显式列名，禁止 `SELECT *`
+  - 例：
+    ```sql
+    -- ✅ 正确
+    INSERT INTO new_table (col_a, col_b, col_c)
+    SELECT col_a, col_b, col_c FROM old_table;
+
+    -- ❌ 禁止
+    INSERT INTO new_table SELECT * FROM old_table;
+    ```
+- 编写完成后在本地用含旧数据的 DB 文件执行一次全量 migration 验证数据完整性
+
 ## 架构边界与红线（绝对禁止）
 1. **禁止修改 `src-tauri/tauri.conf.json` 的 `identifier`、`bundle` 和 `security` 字段**（会破坏签名和包名）
 2. **禁止将 API Key 硬编码到前端或 Rust 源码中**。Key 必须从 Android Keystore 或加密的本地存储中读取，前端通过 Tauri invoke 获取
 3. **禁止自动执行 `pnpm tauri android build` 生成发布包**（签名配置需人工确认）
 4. **文件安全区**：`src-tauri/gen/` 和 `src-tauri/target/` 下的文件绝对不可手动修改
-5. **数据库/本地存储迁移**：若需修改对话数据的存储结构，必须先提出迁移方案并等待确认，禁止直接改动 Rust 中的序列化结构体导致旧数据丢失
+5. **数据库/本地存储迁移**：若需修改对话数据的存储结构，必须先提出迁移方案并等待确认，禁止直接改动 Rust 中的序列化结构体导致旧数据丢失。迁移编写须遵循"SQLite 迁移"规范（列顺序一致、显式列名、本地验证）
 6. **防死循环**：同一构建错误修复 3 次仍失败，必须停止并请求人工介入
 7. **联网使用**：AI API 请求必须设置超时（30s），且必须实现重试逻辑（最多 2 次），但不要重试 4xx 错误
 

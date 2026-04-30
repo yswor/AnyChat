@@ -132,6 +132,7 @@ export interface ProviderTemplate {
   };
   reasoning_effort_options?: string[];
   balance_path?: string;
+  default_model?: string;
 }
 
 export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = {
@@ -158,6 +159,17 @@ export const PROVIDER_TEMPLATES: Record<string, ProviderTemplate> = {
     },
     reasoning_effort_options: ["high", "max"],
     balance_path: "/users/me/balance",
+  },
+  zhipu: {
+    name: "智谱 GLM",
+    base_url: "https://open.bigmodel.cn/api/paas/v4",
+    description: "智谱 AI 开放平台",
+    supports_thinking: true,
+    thinking_param: {
+      switch: "thinking",
+      effort: "reasoning_effort",
+    },
+    reasoning_effort_options: [],
   },
   custom: {
     name: "",

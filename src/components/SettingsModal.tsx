@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { IconClose } from "./Icons";
-import { registerBackHandler, unregisterBackHandler } from "../utils/backButtonManager";
+import { useBackHandler } from "../hooks/useBackHandler";
 import { PARAMETER_RANGES } from "../constants/defaults";
 
 interface SettingsModalProps {
@@ -54,13 +54,7 @@ export function SettingsModal({
     onClose();
   }, [onClose]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    registerBackHandler(closeHandler);
-    return () => {
-      unregisterBackHandler(closeHandler);
-    };
-  }, [isOpen, closeHandler]);
+  useBackHandler(closeHandler, isOpen);
 
   if (!isOpen) return null;
 

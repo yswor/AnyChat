@@ -41,12 +41,53 @@ pub async fn fetch_models(base_url: &str, api_key: &str) -> Result<Vec<ModelInfo
         )));
     }
 
-    let models: ModelsResponse = resp
-        .json()
+    let body = resp
+        .text()
         .await
-        .map_err(|e| AppError::Http(format!("Failed to parse models response: {}", e)))?;
+        .map_err(|e| AppError::Http(format!("Failed to read response body: {}", e)))?;
 
-    Ok(models.data)
+    // Try standard OpenAI /v1/models format: { "object": "list", "data": [...] }
+    if let Ok(response) = serde_json::from_str::<ModelsResponse>(&body) {
+        return Ok(response.data);
+    }
+
+    // Try fallback: raw JSON array or { "models": [...] }
+    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body) {
+        if let Some(data) = val.get("data").and_then(|v| v.as_array()) {
+            let models: Vec<ModelInfo> = data
+                .iter()
+                .filter_map(|item| {
+                    Some(ModelInfo {
+                        id: item["id"].as_str()?.to_string(),
+                        object: item["object"].as_str().unwrap_or("model").to_string(),
+                        owned_by: item["owned_by"].as_str().unwrap_or("").to_string(),
+                    })
+                })
+                .collect();
+            if !models.is_empty() {
+                return Ok(models);
+            }
+        }
+        if let Some(arr) = val.as_array() {
+            let models: Vec<ModelInfo> = arr
+                .iter()
+                .filter_map(|item| {
+                    Some(ModelInfo {
+                        id: item["id"].as_str()?.to_string(),
+                        object: "model".to_string(),
+                        owned_by: "".to_string(),
+                    })
+                })
+                .collect();
+            if !models.is_empty() {
+                return Ok(models);
+            }
+        }
+    }
+
+    // Endpoint returned 200 but didn't match any known format.
+    // Return empty list so test connection doesn't fail.
+    Ok(Vec::new())
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

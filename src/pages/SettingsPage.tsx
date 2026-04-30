@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useProviderStore } from "../stores/providerStore";
 import { useChatStore } from "../stores/chatStore";
 import { IconClose } from "../components/Icons";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 
 export function SettingsPage() {
   const navigate = useNavigate();
@@ -10,6 +11,7 @@ export function SettingsPage() {
     useProviderStore();
   const { getProviderTokens } = useChatStore();
   const [providerTokenCounts, setProviderTokenCounts] = useState<Record<string, number>>({});
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   useEffect(() => {
     loadProviders();
@@ -113,7 +115,7 @@ export function SettingsPage() {
                 </div>
                 <button
                   className="btn-icon btn-icon--danger"
-                  onClick={() => removeProvider(p.id)}
+                  onClick={() => setDeleteTarget(p.id)}
                   title="删除供应商"
                 >
                   <IconClose size={14} />
@@ -139,6 +141,18 @@ export function SettingsPage() {
           AnyChat v{__APP_VERSION__}
         </p>
       </div>
+
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="删除供应商"
+        message="确定要删除该供应商吗？对话会保留但失去关联。"
+        confirmText="删除"
+        onConfirm={() => {
+          if (deleteTarget) removeProvider(deleteTarget);
+          setDeleteTarget(null);
+        }}
+        onClose={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

@@ -244,10 +244,12 @@ fn build_body(
             serde_json::json!({"type": "enabled"}),
         );
         if let Some(effort) = &params.reasoning_effort {
-            body.insert(
-                params.thinking_effort_key.clone(),
-                serde_json::json!(effort),
-            );
+            if !effort.trim().is_empty() {
+                body.insert(
+                    params.thinking_effort_key.clone(),
+                    serde_json::json!(effort),
+                );
+            }
         }
     } else {
         body.insert(

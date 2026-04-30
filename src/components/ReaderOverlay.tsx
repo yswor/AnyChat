@@ -1,6 +1,6 @@
-import { useEffect, useCallback } from "react";
+import { useCallback } from "react";
 import { MarkdownRenderer } from "./MarkdownRenderer";
-import { registerBackHandler, unregisterBackHandler } from "../utils/backButtonManager";
+import { useBackHandler } from "../hooks/useBackHandler";
 import type { Message } from "../types";
 
 interface ReaderOverlayProps {
@@ -15,13 +15,7 @@ export function ReaderOverlay({ message, onClose, title, model }: ReaderOverlayP
     onClose();
   }, [onClose]);
 
-  useEffect(() => {
-    if (!message) return;
-    registerBackHandler(handleClose);
-    return () => {
-      unregisterBackHandler(handleClose);
-    };
-  }, [message, handleClose]);
+  useBackHandler(handleClose, !!message);
 
   if (!message) return null;
 

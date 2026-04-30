@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useChatStore } from "../stores/chatStore";
 import { useProviderStore } from "../stores/providerStore";
+import { ProviderSwitcher } from "../components/ProviderSwitcher";
 import { ChatBubble } from "../components/ChatBubble";
 import { ReaderOverlay } from "../components/ReaderOverlay";
 import { ModelSelector } from "../components/ModelSelector";
@@ -38,9 +39,11 @@ export function ChatPage() {
   const navigate = useNavigate();
   const [input, setInput] = useState("");
   const [showSettings, setShowSettings] = useState(false);
+  const handleCloseSettings = useCallback(() => setShowSettings(false), []);
   const [readerMode, setReaderMode] = useState(false);
   const [readerMessage, setReaderMessage] = useState<Message | null>(null);
   const [isStreamingLocal, setIsStreamingLocal] = useState(false);
+  const [showProviderSwitcher, setShowProviderSwitcher] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const readerScrollTimerRef = useRef<ReturnType<typeof setTimeout>>();
 
@@ -54,6 +57,7 @@ export function ChatPage() {
     setCurrentConversation,
     streamChat,
     deleteMessage,
+    switchConversationProvider,
   } = useChatStore();
 
   const { providers } = useProviderStore();
@@ -234,6 +238,18 @@ export function ChatPage() {
     [messages, deleteMessage],
   );
 
+  const handleSwitchProvider = useCallback(
+    async (newProviderId: string) => {
+      const newProv = providers.find((p) => p.id === newProviderId);
+      if (!newProv || !id) return;
+      const newModel = newProv.default_model || newProv.models?.[0];
+      if (!newModel) return;
+      await switchConversationProvider(id, newProviderId, newModel);
+      loadConversations();
+    },
+    [providers, id, switchConversationProvider, loadConversations],
+  );
+
   /** @fix 边界情况：当 msgIndex=0 时无前驱 user 消息，静默返回 →
    *  改为带警告的提前退出 */
   const handleRegenerate = async (msgIndex: number) => {
@@ -348,7 +364,7 @@ export function ChatPage() {
       <AttachmentBar file={attachedFile} onRemove={handleRemoveFile} />
 
       <div className="chat-page__footer">
-        <div className="chat-page__footer-actions">
+          <div className="chat-page__footer-actions">
           {conv && provider && (
             <ModelSelector
               models={provider.models || []}
@@ -358,6 +374,19 @@ export function ChatPage() {
             />
           )}
           <div className="chat-page__footer-spacer" />
+          {conv && providers.length > 1 && (
+            <button
+              className="btn-icon"
+              onClick={() => { if (isBusy) return; setShowProviderSwitcher(true); }}
+              disabled={isBusy}
+              title="切换供应商"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </button>
+          )}
           <button
             className={`btn-icon ${readerMode ? "btn-icon--active" : ""}`}
             onClick={toggleReaderMode}
@@ -418,7 +447,7 @@ export function ChatPage() {
         <SettingsModal
           key={id}
           isOpen={showSettings}
-          onClose={() => setShowSettings(false)}
+           onClose={handleCloseSettings}
           temperature={conv.temperature}
           maxTokens={conv.max_tokens}
           topP={conv.top_p}
@@ -438,6 +467,13 @@ export function ChatPage() {
         title={conv?.title || "阅读全文"}
         model={conv?.model}
       />
+      {showProviderSwitcher && id && (
+        <ProviderSwitcher
+          currentProviderId={conv?.provider_id ?? null}
+          onSelect={handleSwitchProvider}
+          onClose={() => setShowProviderSwitcher(false)}
+        />
+      )}
     </div>
   );
 }

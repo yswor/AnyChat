@@ -48,6 +48,12 @@ pub fn run() {
             sql: include_str!("../migrations/006_add_tool_nodes.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 7,
+            description: "make provider_id nullable with SET NULL on delete",
+            sql: include_str!("../migrations/007_relax_provider_fk.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

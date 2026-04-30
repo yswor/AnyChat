@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
+import { ToolLogSheet } from "./ToolLogSheet";
 import { useChatStore } from "../stores/chatStore";
 import { useProviderStore } from "../stores/providerStore";
 import { useThemeStore } from "../stores/themeStore";
-import { registerBackHandler, unregisterBackHandler } from "../utils/backButtonManager";
+import { useBackHandler } from "../hooks/useBackHandler";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -12,6 +13,8 @@ interface LayoutProps {
 
 export function Layout({ children }: LayoutProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [toolLogOpen, setToolLogOpen] = useState(false);
+  const prevConvRef = useRef<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { conversations, loadConversations } = useChatStore();
@@ -43,13 +46,7 @@ export function Layout({ children }: LayoutProps) {
     setDrawerOpen(false);
   }, []);
 
-  useEffect(() => {
-    if (!drawerOpen) return;
-    registerBackHandler(closeDrawerHandler);
-    return () => {
-      unregisterBackHandler(closeDrawerHandler);
-    };
-  }, [drawerOpen, closeDrawerHandler]);
+  useBackHandler(closeDrawerHandler, drawerOpen);
 
   const toggleTheme = () => {
     const next = resolvedTheme === "dark" ? "light" : "dark";
@@ -59,6 +56,13 @@ export function Layout({ children }: LayoutProps) {
   const chatMatch = location.pathname.match(/^\/chat\/(.+)$/);
   const convId = chatMatch?.[1];
   const currentConv = convId ? conversations.find((c) => c.id === convId) : null;
+
+  useEffect(() => {
+    if (prevConvRef.current !== convId) {
+      setToolLogOpen(false);
+      prevConvRef.current = convId ?? null;
+    }
+  }, [convId]);
 
   let headerTitle = "AnyChat";
   let isSubPage = false;
@@ -95,6 +99,13 @@ export function Layout({ children }: LayoutProps) {
           <div className="layout__header-title" onClick={goHome}>
             {headerTitle}
           </div>
+          {currentConv && (
+            <button className="btn-icon layout__menu-btn" onClick={() => setToolLogOpen(true)} title="工具日志">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+              </svg>
+            </button>
+          )}
           <button className="btn-icon layout__menu-btn" onClick={toggleTheme} title={resolvedTheme === "dark" ? "切换到亮色" : "切换到暗色"}>
             {resolvedTheme === "dark" ? (
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -119,6 +130,9 @@ export function Layout({ children }: LayoutProps) {
         <main className="layout__content">
           {children}
         </main>
+        {toolLogOpen && convId && (
+          <ToolLogSheet conversationId={convId} onClose={() => setToolLogOpen(false)} />
+        )}
       </div>
     </div>
   );

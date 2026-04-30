@@ -6,12 +6,13 @@ import { v4 as uuidv4 } from "uuid";
 import Database from "@tauri-apps/plugin-sql";
 import { PROVIDER_TEMPLATES, type ModelInfo } from "../types";
 import { IconClose } from "../components/Icons";
+import { ConfirmDialog } from "../components/ConfirmDialog";
 
 export function ProviderEditPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const isNew = !id;
-  const { providers, addProvider, updateProvider, loadProviders } =
+  const { providers, addProvider, updateProvider, removeProvider, loadProviders } =
     useProviderStore();
 
   const [template, setTemplate] = useState<string>("");
@@ -24,6 +25,7 @@ export function ProviderEditPage() {
   const defaultThinkingParam = PROVIDER_TEMPLATES.custom.thinking_param;
   const [thinkingSwitch, setThinkingSwitch] = useState(defaultThinkingParam?.switch ?? "thinking");
   const [thinkingEffort, setThinkingEffort] = useState(defaultThinkingParam?.effort ?? "reasoning_effort");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
 
   const [testing, setTesting] = useState(false);
@@ -59,6 +61,9 @@ export function ProviderEditPage() {
     if (t.thinking_param) {
       setThinkingSwitch(t.thinking_param.switch);
       setThinkingEffort(t.thinking_param.effort);
+    }
+    if (t.default_model) {
+      setDefaultModel(t.default_model);
     }
     setTestError(null);
     setFetchedModels(null);
@@ -240,11 +245,7 @@ export function ProviderEditPage() {
 
   const handleDelete = async () => {
     if (!id) return;
-    const d = await Database.load("sqlite:anychat.db");
-    await d.execute("DELETE FROM messages WHERE conversation_id IN (SELECT id FROM conversations WHERE provider_id = $1)", [id]);
-    await d.execute("DELETE FROM conversations WHERE provider_id = $1", [id]);
-    await d.execute("DELETE FROM providers WHERE id = $1", [id]);
-    updateProvider(id, {});
+    removeProvider(id);
     navigate("/settings");
   };
 
@@ -375,12 +376,18 @@ export function ProviderEditPage() {
               <p>连接成功！已获取 {fetchedModels.length} 个模型</p>
             </div>
           )}
+
+          {fetchedModels && fetchedModels.length === 0 && (
+            <div className="form-success">
+              <p>连接成功！模型列表为空，请手动添加模型后保存</p>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="provider-edit-page__footer">
         {!isNew && (
-          <button className="btn btn-danger" onClick={handleDelete}>
+          <button className="btn btn-danger" onClick={() => setShowDeleteConfirm(true)}>
             删除供应商
           </button>
         )}
@@ -388,6 +395,15 @@ export function ProviderEditPage() {
           保存
         </button>
       </div>
+
+      <ConfirmDialog
+        isOpen={showDeleteConfirm}
+        title="删除供应商"
+        message="确定要删除该供应商吗？对话会保留但失去关联。"
+        confirmText="删除"
+        onConfirm={handleDelete}
+        onClose={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }

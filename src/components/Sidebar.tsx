@@ -1,10 +1,10 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useChatStore } from "../stores/chatStore";
 import { useProviderStore } from "../stores/providerStore";
 import { IconGear, IconClose } from "./Icons";
 import Database from "@tauri-apps/plugin-sql";
 import { useEffect, useRef, useState, useCallback } from "react";
-import { registerBackHandler, unregisterBackHandler } from "../utils/backButtonManager";
+import { useBackHandler } from "../hooks/useBackHandler";
 import { DEFAULT_CONVERSATION_PARAMS } from "../constants/defaults";
 import type { Conversation } from "../types";
 
@@ -15,6 +15,7 @@ interface SidebarProps {
 
 export function Sidebar({ isOpen, onClose }: SidebarProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { conversations, loadConversations, createConversation, deleteConversation } = useChatStore();
   const { providers, activeProviderId } = useProviderStore();
   const [selectedConv, setSelectedConv] = useState<Conversation | null>(null);
@@ -109,26 +110,14 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
     setSelectedConv(null);
   }, []);
 
-  useEffect(() => {
-    if (!showConfirm) return;
-    registerBackHandler(handleCancelDelete);
-    return () => {
-      unregisterBackHandler(handleCancelDelete);
-    };
-  }, [showConfirm, handleCancelDelete]);
+  useBackHandler(handleCancelDelete, showConfirm);
 
   const handleCloseOptions = useCallback(() => {
     setShowOptions(false);
     setSelectedConv(null);
   }, []);
 
-  useEffect(() => {
-    if (!showOptions) return;
-    registerBackHandler(handleCloseOptions);
-    return () => {
-      unregisterBackHandler(handleCloseOptions);
-    };
-  }, [showOptions, handleCloseOptions]);
+  useBackHandler(handleCloseOptions, showOptions);
 
   const handleSelectConv = (id: string) => {
     navigate(`/chat/${id}`, { replace: true });
