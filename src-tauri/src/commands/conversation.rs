@@ -7,7 +7,7 @@ pub struct StreamChatInput {
     pub base_url: String,
     pub api_key: String,
     pub model: String,
-    pub messages: Vec<super::message::ChatMessage>,
+    pub messages: Vec<super::types::ChatMessage>,
     pub temperature: f64,
     pub max_tokens: i64,
     pub top_p: f64,
@@ -26,7 +26,7 @@ pub async fn stream_chat(app: tauri::AppHandle, input: StreamChatInput) -> Resul
     let api_key = store::decrypt_api_key(&input.api_key)
         .map_err(|e| format!("API Key 解密失败，请重新输入 API Key: {}", e))?;
 
-    let params = super::message::StreamChatParams {
+    let params = super::types::StreamChatParams {
         base_url: input.base_url,
         api_key,
         model: input.model,
