@@ -1,6 +1,6 @@
 [package]
 name = "anychat"
-version = "1.8.1"
+version = "1.8.5"
 description = "Multi-provider AI chat application"
 authors = ["AnyChat"]
 edition = "2021"

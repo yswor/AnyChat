@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.8.5] - 2026-05-01
+
+### Fixed
+- 修复工具调用达上限时最后轮不发送tools强制文本输出，避免空消息
+
+## [1.8.4] - 2026-05-01
+
+### Fixed
+- 补充修复对话切换返回键问题：新增 `clearModalMarker()` 在 navigate(replace) 前主动清理 history marker，确保 `replace: true` 替换正确历史条目
+
+## [1.8.3] - 2026-05-01
+
+### Fixed
+- 修复侧边栏切换对话时 onClose/navigate 顺序错误导致 marker 被 replace 而非目标条目，多轮切换后 back 键依次退回旧对话
+
+## [1.8.2] - 2026-04-30
+
+### Fixed
+- 修复对话页背键导航逻辑：所有 ChatPage 导航统一使用 `replace: true`，按返回直接退出应用
+
+### Refactored
+- 代码质量全面提升 19 项（Critical/High/Medium）
+- 大型文件拆分：message.rs 980→5模块, chatStore.ts 692→3模块
+- 提取 useReaderMode hook、useBackHandler hook、ToolNodeDisplay 组件
+- 统一 SQLite 连接为单例
+- 修复 ChatPage ProviderSwitcher 等 3 个组件缺失 backHandler
+- ChatPage 大型 SVG 提取 到 Icons 组件
+- App.tsx initTheme() 消除模块级副作用
+
 ## [1.8.1] - 2026-04-30
 
 ### Fixed

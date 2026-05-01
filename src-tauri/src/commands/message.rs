@@ -37,7 +37,10 @@ pub async fn stream_chat_request(
     let mut doom_counter: usize = 0;
 
     loop {
-        let body = build_body(&params, &messages);
+        let mut body = build_body(&params, &messages);
+        if round + 1 >= MAX_TOOL_ROUNDS {
+            body.remove("tools");
+        }
 
         tracing::info!(
             "[chat] Tool call round {}/{} for conversation {} ({} messages)",

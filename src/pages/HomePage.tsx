@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { clearModalMarker } from "../utils/backButtonManager";
 import { useChatStore } from "../stores/chatStore";
 import { useProviderStore } from "../stores/providerStore";
 import Database from "@tauri-apps/plugin-sql";
@@ -32,6 +33,7 @@ export function HomePage() {
           "SELECT id FROM conversations WHERE id NOT IN (SELECT DISTINCT conversation_id FROM messages) ORDER BY updated_at DESC LIMIT 1",
         );
         if (rows.length > 0) {
+          clearModalMarker();
           navigate(`/chat/${rows[0].id}`, { replace: true });
           return;
         }
@@ -40,6 +42,7 @@ export function HomePage() {
       setCreating(true);
       createConversation(activeProvider.id, defaultModel, DEFAULT_CONVERSATION_PARAMS)
         .then((id) => {
+          clearModalMarker();
           navigate(`/chat/${id}`, { replace: true });
         })
         .catch(() => {
@@ -70,12 +73,14 @@ export function HomePage() {
           "SELECT id FROM conversations WHERE id NOT IN (SELECT DISTINCT conversation_id FROM messages) ORDER BY updated_at DESC LIMIT 1",
         );
         if (rows.length > 0) {
+          clearModalMarker();
           navigate(`/chat/${rows[0].id}`, { replace: true });
           return;
         }
       } catch { /* fall through to create new */ }
 
       const id = await createConversation(activeProvider.id, defaultModel, DEFAULT_CONVERSATION_PARAMS);
+      clearModalMarker();
       navigate(`/chat/${id}`, { replace: true });
     } catch (err) {
       console.error("Failed to create conversation:", err);

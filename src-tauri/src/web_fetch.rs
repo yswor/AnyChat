@@ -4,7 +4,7 @@ pub async fn fetch_url(
     url: &str,
     format: &str,
     timeout_secs: u64,
-    app: &tauri::AppHandle,
+    _app: &tauri::AppHandle,
 ) -> Result<String, AppError> {
     tracing::info!(
         "[webfetch] Fetching URL: {} (format={}, timeout={}s)",
@@ -21,32 +21,7 @@ pub async fn fetch_url(
         .build()
         .map_err(|e| AppError::Http(format!("Failed to create HTTP client: {}", e)))?;
 
-    // Attempt 1: browser UA
-    let mut output = fetch_and_read(&client, url, false, max_size, format).await?;
-
-    // Cloudflare blocked — retry with honest UA
-    if is_cf_blocked(output.status, &output.cf_headers, &output.bytes) {
-        tracing::info!(
-            "[webfetch] Cloudflare blocked, retrying with honest UA for {}",
-            url
-        );
-        output = fetch_and_read(&client, url, true, max_size, format)
-            .await
-            .map_err(|e| {
-                tracing::warn!("[webfetch] Retry failed for {}: {}", url, e);
-                e
-            })?;
-
-        // Still CF blocked after retry — fall back to WebView (Chrome TLS)
-        if is_cf_blocked(output.status, &output.cf_headers, &output.bytes) {
-            tracing::info!(
-                "[webfetch] Still CF blocked, falling back to WebView fetch for {}",
-                url
-            );
-            let (bytes, ct) = crate::webview_bridge::fetch_via_webview(url, app).await?;
-            return process_bytes(bytes, &ct, format, url);
-        }
-    }
+    let output = fetch_and_read(&client, url, max_size, format).await?;
 
     if output.status >= 400 {
         let text = String::from_utf8_lossy(&output.bytes);
@@ -123,7 +98,6 @@ fn decode_text(bytes: &[u8], content_type: &str) -> String {
             }
         }
     }
-    // Detect BOM for UTF-16/UTF-32
     if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
         let (decoded, _encoding, _) = encoding_rs::UTF_16LE.decode(bytes);
         return decoded.into_owned();
@@ -233,15 +207,8 @@ fn process_bytes(
     }
 }
 
-struct CfHeaders {
-    cf_mitigated: bool,
-    has_cf_ray: bool,
-    server_is_cloudflare: bool,
-}
-
 struct FetchOutput {
     status: u16,
-    cf_headers: CfHeaders,
     content_type: String,
     bytes: Vec<u8>,
 }
@@ -249,28 +216,11 @@ struct FetchOutput {
 async fn fetch_and_read(
     client: &reqwest::Client,
     url: &str,
-    honest_ua: bool,
     max_size: usize,
     format: &str,
 ) -> Result<FetchOutput, AppError> {
-    let resp = do_fetch(client, url, honest_ua, format).await?;
+    let resp = do_fetch(client, url, format).await?;
     let status = resp.status().as_u16();
-
-    let cf_headers = CfHeaders {
-        cf_mitigated: resp
-            .headers()
-            .get("cf-mitigated")
-            .and_then(|v| v.to_str().ok())
-            .map(|v| v == "challenge")
-            .unwrap_or(false),
-        has_cf_ray: resp.headers().contains_key("cf-ray"),
-        server_is_cloudflare: resp
-            .headers()
-            .get("server")
-            .and_then(|v| v.to_str().ok())
-            .map(|v| v.to_lowercase().contains("cloudflare"))
-            .unwrap_or(false),
-    };
 
     let content_type = resp
         .headers()
@@ -321,7 +271,6 @@ async fn fetch_and_read(
 
     Ok(FetchOutput {
         status,
-        cf_headers,
         content_type,
         bytes,
     })
@@ -330,14 +279,9 @@ async fn fetch_and_read(
 async fn do_fetch(
     client: &reqwest::Client,
     url: &str,
-    honest_ua: bool,
     format: &str,
 ) -> Result<reqwest::Response, AppError> {
-    let ua = if honest_ua {
-        "opencode"
-    } else {
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/143.0.0.0 Safari/537.36"
-    };
+    let ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/143.0.0.0 Safari/537.36";
 
     let accept = match format {
         "markdown" => "text/markdown;q=1.0, text/x-markdown;q=0.9, text/plain;q=0.8, text/html;q=0.7, */*;q=0.1",
@@ -357,26 +301,4 @@ async fn do_fetch(
             tracing::warn!("[webfetch] Connection failed for {}: {}", url, e);
             AppError::Http(format!("Connection failed: {}", e))
         })
-}
-
-fn is_cf_blocked(status: u16, cf: &CfHeaders, bytes: &[u8]) -> bool {
-    if status != 403 && status != 503 {
-        return false;
-    }
-
-    if cf.cf_mitigated || cf.has_cf_ray || cf.server_is_cloudflare {
-        return true;
-    }
-
-    let body = String::from_utf8_lossy(bytes);
-    let lower = body.to_lowercase();
-
-    lower.contains("_cf_chl_opt")
-        || lower.contains("cf-browser-verify")
-        || lower.contains("challenge-platform")
-        || lower.contains("cf-captcha")
-        || (lower.contains("just a moment") && lower.contains("cloudflare"))
-        || (lower.contains("checking your browser") && lower.contains("cloudflare"))
-        || (lower.contains("cloudflare") && lower.contains("attention required"))
-        || lower.contains("cf-chl-bypass")
 }

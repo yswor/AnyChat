@@ -6,6 +6,7 @@ import { useChatStore } from "../stores/chatStore";
 import { useProviderStore } from "../stores/providerStore";
 import { useThemeStore } from "../stores/themeStore";
 import { useBackHandler } from "../hooks/useBackHandler";
+import { clearModalMarker } from "../utils/backButtonManager";
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -32,6 +33,7 @@ export function Layout({ children }: LayoutProps) {
   const { resolvedTheme, setTheme } = useThemeStore();
 
   const goHome = useCallback(() => {
+    clearModalMarker();
     if (conversations.length > 0) {
       const last = conversations[0];
       navigate(`/chat/${last.id}`, { replace: true });

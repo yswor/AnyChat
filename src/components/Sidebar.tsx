@@ -5,6 +5,7 @@ import { IconGear, IconClose } from "./Icons";
 import { getDb } from "../db";
 import { useRef, useState, useCallback } from "react";
 import { useBackHandler } from "../hooks/useBackHandler";
+import { clearModalMarker } from "../utils/backButtonManager";
 import { DEFAULT_CONVERSATION_PARAMS } from "../constants/defaults";
 import type { Conversation } from "../types";
 
@@ -72,6 +73,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
           "SELECT id FROM conversations WHERE id NOT IN (SELECT DISTINCT conversation_id FROM messages) ORDER BY updated_at DESC LIMIT 1",
         );
         if (rows.length > 0) {
+          clearModalMarker();
           onClose();
           navigate(`/chat/${rows[0].id}`, { replace: true });
           return;
@@ -79,6 +81,7 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
       } catch { /* fall through to create new */ }
 
       const id = await createConversation(provider.id, defaultModel, DEFAULT_CONVERSATION_PARAMS);
+      clearModalMarker();
       onClose();
       navigate(`/chat/${id}`, { replace: true });
       loadConversations();
@@ -115,8 +118,9 @@ export function Sidebar({ isOpen, onClose }: SidebarProps) {
   useBackHandler(handleCloseOptions, showOptions);
 
   const handleSelectConv = (id: string) => {
-    navigate(`/chat/${id}`, { replace: true });
+    clearModalMarker();
     onClose();
+    navigate(`/chat/${id}`, { replace: true });
   };
 
   const formatDate = (dateStr: string) => {

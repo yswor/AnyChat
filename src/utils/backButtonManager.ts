@@ -29,3 +29,9 @@ export function unregisterBackHandler(handler: Handler) {
     window.history.back();
   }
 }
+
+export function clearModalMarker() {
+  if (window.history.state?.__modal) {
+    window.history.back();
+  }
+}

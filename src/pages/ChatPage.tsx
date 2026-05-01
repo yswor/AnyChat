@@ -20,7 +20,6 @@ import {
 } from "../components/Icons";
 import { useAutoScroll } from "../hooks/useAutoScroll";
 import { useFileAttachment } from "../hooks/useFileAttachment";
-import { useWebViewFetchFallback } from "../hooks/useWebViewFetchFallback";
 import { useReaderMode } from "../hooks/useReaderMode";
 import type { Conversation, Message } from "../types";
 
@@ -82,8 +81,6 @@ export function ChatPage() {
     handleRemoveFile,
     allowedExtensions,
   } = useFileAttachment();
-
-  useWebViewFetchFallback();
 
   const {
     readerMode,
